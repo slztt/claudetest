@@ -144,6 +144,11 @@ export function createVision({ call, act, toast, say, onHands, hooks }) {
       if (!S.track.body) S.res.pose = null;
     } catch (e) { /* a dropped frame */ }
     S.frames++;
+    if (S.stream && ts - (S.lastSent || 0) > 1000 && hooks.active()) {   // live view: Gemini sees the camera about once a second
+      S.lastSent = ts;
+      const url = snapshot(false);
+      if (url) call('vision_frame', url.split(',')[1]);
+    }
     if (ts - S.fpsT > 1000) { S.fps = Math.round(S.frames * 1000 / (ts - S.fpsT)); S.frames = 0; S.fpsT = ts; const f = S.root && S.root.querySelector('[data-fps]'); if (f) f.textContent = `${S.fps} FPS · ${w}x${h}`; }
     draw(w, h);
     handControl();
@@ -320,6 +325,7 @@ export function createVision({ call, act, toast, say, onHands, hooks }) {
     setStyle(v) { if (['off', 'minimal', 'wireframe', 'full'].includes(v)) { S.style = v; persist(); return true; } return false; },
     setTrack(list) { const l = String(list || 'all').toLowerCase(); for (const k of Object.keys(S.track)) S.track[k] = l === 'all' || l.includes(k) || (k === 'body' && l.includes('pose')); persist(); },
     setHandControl(v) { S.handControl = !!v; persist(); },
+    setStream(v) { S.stream = !!v; },
     snapshot,
   };
 }

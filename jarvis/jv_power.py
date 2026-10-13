@@ -65,16 +65,9 @@ These are your permanent instructions. Follow them whenever the user is not dire
 """
 
 
-def _client(core):
-    import jv_models
-    c = jv_models.make_client(core.cfg)
-    c.deep = True
-    return c
-
-
 def _ask(core, system, prompt, max_tokens=1500):
-    text, _, _ = _client(core).chat(system, [{"role": "user", "content": prompt}], None, max_tokens=max_tokens, temperature=0.2)
-    return text or ""
+    import jv_models
+    return jv_models.gemini_text(core.cfg, system, prompt, max_tokens=max_tokens) or ""
 
 
 def _json_list(text):

@@ -322,52 +322,9 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
 
 <aside id="settings" role="dialog" aria-modal="false" aria-labelledby="set-h">
   <h2 id="set-h">CONFIGURATION</h2>
-  <div class="lbox">
-    <b>FREE AI · FAST AND SMART · RECOMMENDED</b>
-    <p>Two free keys, one minute: Google Gemini thinks, Groq is the instant backup and hears you. No card needed. JARVIS picks the best free models and switches if one is busy.</p>
-    <label for="fk-gem" style="margin-top:4px">Gemini key (free)</label>
-    <div style="display:flex;gap:8px"><input type="password" id="fk-gem" placeholder="paste the key here"><button class="btn" id="fk-gem-get" style="padding:8px 12px;flex:none">Get free key</button></div>
-    <label for="fk-groq">Groq key (free)</label>
-    <div style="display:flex;gap:8px"><input type="password" id="fk-groq" placeholder="paste the key here"><button class="btn" id="fk-groq-get" style="padding:8px 12px;flex:none">Get free key</button></div>
-    <button class="btn go" id="fk-use" style="margin-top:14px">Use the best free AI</button>
-    <p id="fk-msg" role="status" style="font-size:11px;color:var(--dim);margin:8px 0 0"></p>
-  </div>
-  <details id="adv-local"><summary style="cursor:pointer;color:var(--dim);font-size:10px;letter-spacing:.24em;margin:6px 0 10px">ADVANCED · AI ON THIS PC</summary>
-  <div class="lbox">
-    <b>LOCAL AI · PRIVATE · NEEDS A STRONG GPU (SLOWER)</b>
-    <p id="la-hw">Checking this PC…</p>
-    <button class="btn go" id="la-go">Set up local AI</button>
-    <div class="lbar"><i id="la-bar"></i></div><p id="la-msg" role="status"></p>
-    <div class="sw"><div>Use it as a backup<small>Only if every free cloud AI is unavailable</small></div><input type="checkbox" id="s-lfb" aria-label="Local AI as backup"></div>
-    <button class="btn no" id="la-rm" style="margin-top:12px">Remove local AI</button>
-  </div>
-  </details>
-  <label for="s-prov">AI model provider</label>
-  <select id="s-prov"></select>
-  <div id="brain-fields">
-    <label for="s-model">Model</label>
-    <div style="display:flex;gap:8px"><input type="text" id="s-model" list="s-models" placeholder="model name"><button class="btn" id="s-list" style="padding:8px 12px;flex:none">List</button></div>
-    <datalist id="s-models"></datalist>
-    <label for="s-bkey" id="l-bkey">Provider API key</label>
-    <input type="password" id="s-bkey" placeholder="paste the provider's API key">
-    <label for="s-burl">Base URL · optional</label>
-    <input type="text" id="s-burl" placeholder="default">
-    <label for="s-think">Thinking</label>
-    <select id="s-think"><option value="auto">Automatic (think when the model can)</option><option value="on">Always think</option><option value="high">Think hard (gpt-oss)</option><option value="low">Think briefly (gpt-oss)</option><option value="off">Off · fastest</option></select>
-    <label for="s-vision">Vision helper model · local, optional</label>
-    <input type="text" id="s-vision" placeholder="e.g. qwen2.5vl:7b (lets a text-only model see the screen)">
-    <label for="s-stt">Voice input (speech to text)</label>
-    <select id="s-stt"><option value="auto">Automatic</option><option value="provider">Provider (OpenAI / Groq Whisper)</option><option value="gemini">Gemini (uses the Gemini key)</option><option value="local">On this PC (faster-whisper)</option><option value="off">Off · type only</option></select>
-    <label for="s-tts">Voice output</label>
-    <select id="s-tts"><option value="auto">Automatic</option><option value="kokoro">Kokoro · free local British voice</option><option value="fish">Fish Audio film voice</option><option value="provider">Provider (OpenAI TTS)</option><option value="system">This PC's built-in voice</option><option value="off">Off · captions only</option></select>
-  </div>
-  <label for="s-kv">Local voice (Kokoro, free)</label>
-  <div style="display:flex;gap:8px"><select id="s-kv"></select><button class="btn" id="s-kvt" style="padding:8px 12px;flex:none">Hear it</button></div>
-  <div class="brow" style="margin-top:14px"><button class="btn go" id="s-tb">Test model</button></div>
-  <p id="brain-note" class="gnote" style="text-align:left"></p>
-  <label for="s-key" id="l-gkey">Gemini API key</label>
-  <input type="password" id="s-key" placeholder="paste key from aistudio.google.com/apikey">
-  <label>Fish Audio API key · JARVIS film voice</label>
+  <label for="s-key">Gemini API key</label>
+  <div style="display:flex;gap:8px"><input type="password" id="s-key" placeholder="paste key from aistudio.google.com/apikey"><button class="btn" id="s-getkey" style="padding:8px 12px;flex:none">Get free key</button></div>
+  <label>Fish Audio API key · JARVIS film voice (optional)</label>
   <input type="password" id="s-fish" placeholder="paste key from fish.audio (API keys)">
   <p id="voice-note"></p>
   <label>Microphone</label>
@@ -382,17 +339,6 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
   <input type="range" id="s-wake" min="0.25" max="0.85" step="0.05">
   <div class="sw"><div>Interrupt by speaking<small>Use headphones to avoid echo</small></div><input type="checkbox" id="s-barge"></div>
   <div class="sw"><div>Ask before risky actions<small>Deleting, installing, overwriting, power</small></div><input type="checkbox" id="s-conf"></div>
-  <h2 style="margin-top:34px">MCP SERVERS</h2>
-  <p class="gnote" style="text-align:left">Give JARVIS tools for other programs: Roblox Studio, Blender, a browser, GitHub and more. Any MCP server works.</p>
-  <div id="mcp-list"></div>
-  <div style="display:flex;gap:8px;margin-top:10px"><select id="mcp-preset"></select><button class="btn go" id="mcp-add" style="padding:8px 12px;flex:none">Add</button></div>
-  <p class="gnote" id="mcp-note" style="text-align:left"></p>
-  <div class="brow" style="margin-top:8px"><button class="btn" id="mcp-imp">Import from Claude Desktop</button><button class="btn" id="mcp-edit">Edit JSON</button></div>
-  <textarea id="mcp-json" spellcheck="false" hidden></textarea><div class="brow" id="mcp-jrow" hidden><button class="btn go" id="mcp-save">Save servers</button></div>
-  <h2 style="margin-top:34px">STANDING ORDERS</h2>
-  <p class="gnote" style="text-align:left">What JARVIS does on his own, without you directing him. He follows these in every conversation and background job, and adds rules when you say “from now on…”.</p>
-  <textarea id="orders" spellcheck="false"></textarea>
-  <div class="brow"><button class="btn go" id="orders-save">Save orders</button></div>
   <h2 style="margin-top:34px">ACCESSIBILITY</h2>
   <div class="sw"><div>Reduce motion<small>Slows spinning, removes flashes, glitches and the boot fly-in</small></div><input type="checkbox" id="s-calm" aria-label="Reduce motion"></div>
   <div class="sw"><div>High contrast<small>Solid panels and brighter text</small></div><input type="checkbox" id="s-contrast" aria-label="High contrast"></div>
@@ -401,7 +347,20 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
   <input type="range" id="s-spin" min="0.05" max="1.5" step="0.05">
   <label for="s-scale">Text and panel size</label>
   <input type="range" id="s-scale" min="0.8" max="1.6" step="0.05">
-  <p class="gnote" style="text-align:left">Voice opens everything (“open the calendar”, “show the camera”, “put YouTube on”). Keyboard: / or T to type, C calendar, O camera, J Control Centre (inside it: arrows, PageUp/PageDown, D W M A Y views, N new event), G Earth, arrows rotate, + and − zoom, [ and ] step through satellites, V satellite view, Esc back. Every 3D readout is mirrored as text for screen readers.</p>
+  <details style="margin-top:28px"><summary style="cursor:pointer;color:var(--dim);font-size:10px;letter-spacing:.3em">ADVANCED · MCP SERVERS AND STANDING ORDERS</summary>
+  <h2 style="margin-top:20px">MCP SERVERS</h2>
+  <p class="gnote" style="text-align:left">Tools for other programs: Roblox Studio, Blender, a browser, GitHub and more.</p>
+  <div id="mcp-list"></div>
+  <div style="display:flex;gap:8px;margin-top:10px"><select id="mcp-preset"></select><button class="btn go" id="mcp-add" style="padding:8px 12px;flex:none">Add</button></div>
+  <p class="gnote" id="mcp-note" style="text-align:left"></p>
+  <div class="brow" style="margin-top:8px"><button class="btn" id="mcp-imp">Import from Claude Desktop</button><button class="btn" id="mcp-edit">Edit JSON</button></div>
+  <textarea id="mcp-json" spellcheck="false" hidden></textarea><div class="brow" id="mcp-jrow" hidden><button class="btn go" id="mcp-save">Save servers</button></div>
+  <h2 style="margin-top:28px">STANDING ORDERS</h2>
+  <p class="gnote" style="text-align:left">What JARVIS does on his own. He also adds rules when you say “from now on…”.</p>
+  <textarea id="orders" spellcheck="false"></textarea>
+  <div class="brow"><button class="btn go" id="orders-save">Save orders</button></div>
+  </details>
+  <p class="gnote" style="text-align:left;margin-top:22px">Ask for anything by voice: “watch my screen”, “open the calendar”, “open the camera”, “put YouTube on”. Keys: / or T to type, C calendar, O camera, G Earth, J Control Centre, Esc back.</p>
   <div class="brow"><button class="btn go" id="s-test">Test audio</button><button class="btn" id="s-done">Close</button></div>
   <p id="hint-wake"></p>
 </aside>

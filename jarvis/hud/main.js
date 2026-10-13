@@ -209,10 +209,7 @@ function loadSettings(s) {
   $('#s-barge').checked = !!s.barge_in;
   $('#s-conf').checked = !!s.confirm_risky;
   $('#s-fish').value = s.fish_key || '';
-  $('#fk-gem').value = s.api_key || ''; $('#fk-groq').value = s.groq_key || '';
-  $('#s-lfb').checked = !!s.local_fallback;
   voiceNote();
-  brainFields();
   applyA11y();
 }
 const put = (k, v) => { S.settings[k] = v; call('set_setting', k, v); };
@@ -230,99 +227,7 @@ function voiceNote() {
   n.textContent = on ? 'Voice: J.A.R.V.I.S. (MCU) via Fish Audio.' : 'Voice: built-in. Add a Fish Audio key to give him the film voice.';
 }
 $('#s-test').onclick = () => call('test_audio');
-
-/* ---------- AI model (any provider) ---------- */
-let PROVIDERS = [
-  { id: 'gemini-live', label: 'Gemini Live · native voice', needs_key: true, model: '', url: '' },
-  { id: 'anthropic', label: 'Anthropic · Claude', needs_key: true, model: 'claude-sonnet-5-5', url: 'https://api.anthropic.com/v1' },
-  { id: 'openai', label: 'OpenAI', needs_key: true, model: 'gpt-4.1-mini', url: 'https://api.openai.com/v1' },
-  { id: 'ollama', label: 'Ollama · local', needs_key: false, model: 'llama3.1', url: 'http://localhost:11434/v1' },
-  { id: 'custom', label: 'Custom OpenAI-compatible', needs_key: false, model: '', url: '' },
-];
-function fillProviders(list) {
-  if (list && list.length) PROVIDERS = list;
-  $('#s-prov').innerHTML = PROVIDERS.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
-  $('#s-prov').value = S.settings.brain_provider || 'gemini-live';
-}
-function brainFields() {
-  const s = S.settings, id = s.brain_provider || 'gemini-live', p = PROVIDERS.find((x) => x.id === id) || PROVIDERS[0];
-  if ($('#s-prov').options.length !== PROVIDERS.length) fillProviders();
-  $('#s-prov').value = id;
-  const live = id === 'gemini-live';
-  $('#brain-fields').hidden = live;
-  $('#s-model').value = s.brain_model || ''; $('#s-model').placeholder = p.model || 'model name';
-  $('#s-bkey').value = s.brain_key || '';
-  $('#s-bkey').placeholder = p.needs_key ? (id === 'gemini' ? 'leave empty to use the Gemini key below' : 'paste the provider API key') : 'not needed for local models';
-  $('#s-burl').value = s.brain_url || ''; $('#s-burl').placeholder = p.url || 'https://your-server/v1';
-  $('#s-stt').value = s.stt_mode || 'auto'; $('#s-tts').value = s.tts_mode || 'auto';
-  $('#s-think').value = s.brain_think || 'auto'; $('#s-vision').value = s.vision_model || '';
-  if ($('#s-kv').options.length) $('#s-kv').value = s.kokoro_voice || 'bm_george';
-  $('#l-gkey').textContent = live ? 'Gemini API key' : 'Gemini API key · optional (voice input, research)';
-  $('#brain-note').textContent = live
-    ? 'Gemini Live hears and speaks natively. Pick another provider to use Claude, GPT, Llama, Mistral, DeepSeek, Grok, a local Ollama model or any OpenAI-compatible server; every tool and the hologram keep working.'
-    : `${p.label}: text and tools go to ${s.brain_url || p.url || 'your server'}. The wake word stays on this PC; speech is transcribed and spoken as chosen below.`;
-}
-function setBrain(b) { if (b) $('#brain-name').textContent = `${b.label}${b.model ? ' · ' + b.model : ''}`; }
-$('#s-prov').addEventListener('change', (e) => {
-  const id = e.target.value;
-  put('brain_url', ''); put('brain_model', ''); put('brain_provider', id);
-  brainFields();
-});
-[['#s-model', 'brain_model'], ['#s-bkey', 'brain_key'], ['#s-burl', 'brain_url']].forEach(([q, k]) => {
-  $(q).addEventListener('change', (e) => { put(k, e.target.value.trim()); brainFields(); });
-  $(q).addEventListener('keydown', (e) => e.stopPropagation());
-});
-$('#s-stt').addEventListener('change', (e) => put('stt_mode', e.target.value));
-$('#s-think').addEventListener('change', (e) => put('brain_think', e.target.value));
-$('#s-vision').addEventListener('change', (e) => put('vision_model', e.target.value.trim()));
-$('#s-vision').addEventListener('keydown', (e) => e.stopPropagation());
-$('#s-kv').addEventListener('change', (e) => put('kokoro_voice', e.target.value));
-$('#s-kvt').onclick = async () => { const r = await call('test_voice', $('#s-kv').value); if (r && r !== 'ok') $('#brain-note').textContent = r; else if (!r) $('#brain-note').textContent = 'Voice preview needs the JARVIS app.'; };
-
-/* ---------- free cloud AI ---------- */
-$('#fk-gem-get').onclick = () => { call('open_url', 'https://aistudio.google.com/apikey'); $('#fk-msg').textContent = 'Sign in with Google, press Create API key, copy it and paste it here.'; };
-$('#fk-groq-get').onclick = () => { call('open_url', 'https://console.groq.com/keys'); $('#fk-msg').textContent = 'Sign in, press Create API Key, copy it and paste it here.'; };
-$('#fk-gem').addEventListener('change', (e) => { put('api_key', e.target.value.trim()); $('#s-key').value = e.target.value.trim(); });
-$('#fk-groq').addEventListener('change', (e) => put('groq_key', e.target.value.trim()));
-for (const q of ['#fk-gem', '#fk-groq']) $(q).addEventListener('keydown', (e) => e.stopPropagation());
-$('#fk-use').onclick = async () => {
-  const g = $('#fk-gem').value.trim(), q = $('#fk-groq').value.trim();
-  if (!g && !q) { $('#fk-msg').textContent = 'Paste at least one free key first.'; return; }
-  if (g !== (S.settings.api_key || '')) put('api_key', g);
-  if (q !== (S.settings.groq_key || '')) put('groq_key', q);
-  put('brain_provider', 'auto'); put('stt_mode', 'auto'); brainFields();
-  $('#fk-msg').textContent = 'Testing…';
-  const r = await call('test_brain');
-  $('#fk-msg').textContent = r ? (r.ok ? '✓ Ready: ' : '✗ ') + r.text : 'Saved. (Testing needs the JARVIS app.)';
-};
-
-/* ---------- free local AI ---------- */
-async function localInfo() {
-  const d = await call('local_info');
-  if (!d) { $('#la-hw').textContent = 'One click installs Ollama and the best free model your PC can run (needs the JARVIS app).'; return; }
-  const hw = d.hw;
-  $('#la-hw').innerHTML = `${esc(hw.gpu)}${hw.vram_gb ? ' · ' + hw.vram_gb + ' GB VRAM' : ''} · ${hw.ram_gb} GB RAM.<br>Best brain for this PC: <b style="color:#fff;letter-spacing:.04em">${esc(d.models[0])}</b> (thinks, uses tools), plus <b style="color:#fff;letter-spacing:.04em">${esc(d.vision)}</b> to see the screen.${d.cpu_only ? ' No NVIDIA GPU found, so it will run on the CPU (slower).' : ''}${d.ollama ? ' Ollama is running' + (d.installed.length ? ' with ' + d.installed.length + ' models.' : '.') : ''}`;
-  $('#s-kv').innerHTML = Object.entries(d.voices).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
-  $('#s-kv').value = S.settings.kokoro_voice || 'bm_george';
-  if (d.installed.length) $('#s-models').innerHTML = d.installed.map((m) => `<option value="${esc(m)}">`).join('');
-}
-$('#s-lfb').addEventListener('change', (e) => put('local_fallback', e.target.checked));
-$('#la-rm').onclick = async () => {
-  $('#la-msg').textContent = 'Removing the local AI engine and its models…';
-  const r = await call('remove_local');
-  $('#la-msg').textContent = r || 'Removing needs the JARVIS app.';
-};
-$('#adv-local').addEventListener('toggle', (e) => { if (e.target.open) localInfo(); });
-$('#la-go').onclick = async () => {
-  const r = await call('local_setup', '', true);
-  $('#la-msg').textContent = r === 'started' ? 'Starting…' : (r || 'Local setup needs the JARVIS app.');
-  if (r === 'started') $('#la-go').disabled = true;
-};
-function setupProgress(ev) {
-  $('#la-msg').textContent = ev.text; $('#la-msg').style.color = ev.ok === false ? 'var(--red)' : '';
-  if (ev.pct != null) $('#la-bar').style.width = ev.pct + '%';
-  if (ev.done) { $('#la-go').disabled = false; act('LOCAL AI · ' + (ev.ok ? 'READY' : 'FAILED')); if (ev.ok) { $('#la-bar').style.width = '100%'; localInfo(); } }
-}
+$('#s-getkey').onclick = () => call('open_url', 'https://aistudio.google.com/apikey');
 
 /* ---------- MCP servers ---------- */
 let mcpPresets = {};
@@ -355,21 +260,7 @@ $('#mcp-list').addEventListener('click', async (e) => {
 $('#orders').addEventListener('keydown', (e) => e.stopPropagation());
 $('#orders-save').onclick = async () => { const r = await call('orders_save', $('#orders').value); act('STANDING ORDERS · ' + (r || 'needs the JARVIS app')); };
 async function ordersLoad() { const t = await call('orders_get'); $('#orders').value = t || '# Standing orders\n(Available in the JARVIS app.)'; }
-$('#s-tts').addEventListener('change', (e) => put('tts_mode', e.target.value));
-$('#s-list').onclick = async () => {
-  const n = $('#brain-note'); n.textContent = 'Asking the provider which models this key can use…';
-  const r = await call('list_models');
-  if (!r) { n.textContent = 'Model listing needs the JARVIS app (not available in browser preview).'; return; }
-  if (!r.ok) { n.textContent = r.error; return; }
-  $('#s-models').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join('');
-  n.textContent = `${r.models.length} models available. Click the Model box to pick one.`;
-  $('#s-model').focus();
-};
-$('#s-tb').onclick = async () => {
-  const n = $('#brain-note'); n.textContent = 'Testing…';
-  const r = await call('test_brain');
-  n.textContent = r ? (r.ok ? '✓ ' : '✗ ') + r.text : 'Testing needs the JARVIS app.';
-};
+function setBrain(b) { if (b) $('#brain-name').textContent = `${b.label}${b.model ? ' · ' + b.model : ''}`; }
 
 /* ---------- accessibility ---------- */
 const mqCalm = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false, addEventListener() {} };
@@ -499,7 +390,6 @@ window.HUD = {
       case 'approval_clear': pending = null; $('#approve').classList.remove('show'); break;
       case 'thought': { const h = $('#hist'), p = document.createElement('p'); p.className = 'sys'; p.textContent = '💭 ' + ev.text.slice(-400); h.appendChild(p); h.scrollTop = h.scrollHeight; break; }
       case 'mcp': window.__mcpRows = ev.servers; window.__renderMcp && window.__renderMcp(); break;
-      case 'setup': setupProgress(ev); break;
       case 'wake_status': S.wakeOk = ev.ok; S.wakeErr = ev.err || ''; hint();
         $('#hint-wake').textContent = ev.ok ? 'Wake word engine: online. Say “Hey JARVIS” to wake him.' : 'Wake word engine unavailable: ' + ev.err + ' You can still click the core or type to talk.'; break;
     }
@@ -516,7 +406,8 @@ async function boot(initial) {
   document.body.classList.add('ready');
   scene.intro();
   if (initial) {
-    fillProviders(initial.providers); S.settings = initial.settings || {};
+    S.settings = initial.settings || {};
+    if ((initial.settings || {}).live_view === 'camera') vision.setStream(true);
     loadSettings(initial.settings); lists(initial.lists); setState(initial.state); setTheme((initial.settings || {}).theme);
     setBrain(initial.brain);
     if (initial.state === 'SETUP') setTimeout(() => openSettings(true), 1200);   // first run: go straight to choosing a brain
@@ -786,7 +677,7 @@ window.HUD.hologram = function (c) {
 const vision = createVision({
   call, act, toast, say,
   onHands: (h) => panels.pointer(h),
-  hooks: { speaking: () => S.state === 'SPEAKING', stop: () => call('stop'), approvalShown: () => pending != null, approve: (ok) => answer(ok), wake: () => call('wake') },
+  hooks: { active: () => ['LISTENING', 'THINKING', 'SPEAKING'].includes(S.state), speaking: () => S.state === 'SPEAKING', stop: () => call('stop'), approvalShown: () => pending != null, approve: (ok) => answer(ok), wake: () => call('wake') },
 });
 const panels = createPanels({ call, hasBridge: () => !!api(), esc, act, toast, say, vision });
 window.HUD.panel = (c) => panels.command(c || {});
@@ -798,6 +689,7 @@ window.HUD.vision = function (c) {
   if (a === 'track') { vision.setTrack(v); return 'Tracking ' + (v || 'all') + '.'; }
   if (a === 'hand_control') { vision.setHandControl(!/off|false|no/.test(v)); return 'Hand control ' + (/off|false|no/.test(v) ? 'off.' : 'on: pinch to grab panels, quick pinch to click, two hands to resize.'); }
   if (a === 'snapshot') return vision.open ? vision.snapshot(false) : 'The camera is closed; open it first.';
+  if (a === 'stream') { vision.setStream(v === 'on'); return 'ok'; }
   return vision.status();
 };
 window.HUD.ui = function (c) {

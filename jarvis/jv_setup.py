@@ -1,7 +1,7 @@
 """JARVIS-3 setup and health check, run by the launcher (JARVIS.bat / start.sh) with JARVIS's own Python.
 
   python jv_setup.py scan                 report what is installed and what is missing
-  python jv_setup.py setup [--local ask|yes|no] [--quiet]
+  python jv_setup.py setup
                                           install / repair everything that is missing, then exit 0
 
 Everything is idempotent: on a healthy install it finishes in a second or two.
@@ -84,41 +84,21 @@ def find_browser():
 
 # ---------------------------------------------------------------------------------------------
 def scan():
-    import jv_models
-    hw = jv_models.hardware()
-    rec = jv_models.recommend()
     cfg = load(CFG, {})
-    up = jv_models.ollama_up()
-    models = []
-    if up:
-        try:
-            models = jv_models.ChatClient({"brain_provider": "ollama"}).list_models()
-        except Exception:
-            pass
-    voice = (DATA / "voices" / "kokoro-v1.0.onnx").exists() and (DATA / "voices" / "voices-v1.0.bin").exists()
-    info = {
-        "python": sys.version.split()[0], "gpu": hw["gpu"], "vram_gb": hw["vram_gb"], "ram_gb": hw["ram_gb"],
-        "ollama": up, "ollama_installed": bool(shutil.which("ollama") or (IS_WIN and os.path.exists(os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")))),
-        "models": models, "best": rec["models"], "vision": rec["vision"], "voice": voice, "browser": find_browser(),
-        "node": shutil.which("node") or "", "blender": find_blender(), "roblox_studio": find_roblox_studio(),
-        "brain": cfg.get("brain_provider", "gemini-live"), "brain_model": cfg.get("brain_model", ""), "gemini_key": bool(cfg.get("api_key")),
-    }
-    return info
+    ollama = bool(shutil.which("ollama") or (IS_WIN and os.path.exists(os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"))))
+    return {"python": sys.version.split()[0], "gemini_key": bool(cfg.get("api_key")), "fish_key": bool(cfg.get("fish_key")),
+            "browser": find_browser(), "node": shutil.which("node") or "", "blender": find_blender(),
+            "roblox_studio": find_roblox_studio(), "ollama": ollama}
 
 
 def print_scan(i):
     say("step", "Scanning this PC")
     say("ok", "Python %s" % i["python"])
-    say("ok" if i["vram_gb"] else "warn", "Graphics: %s%s · %s GB RAM" % (i["gpu"], " · %s GB VRAM" % i["vram_gb"] if i["vram_gb"] else "", i["ram_gb"]))
-    say("ok" if i["ollama"] else "warn", "Ollama (local AI engine): %s" % ("running" if i["ollama"] else "installed, not running" if i["ollama_installed"] else "not installed"))
-    have = [m for m in i["best"] if m in i["models"]]
-    say("ok" if have else "warn", "Local brain: %s (best for this PC: %s)" % (have[0] if have else "none downloaded", i["best"][0]))
-    say("ok" if i["voice"] else "warn", "Free JARVIS voice (Kokoro): %s" % ("ready" if i["voice"] else "not downloaded"))
+    say("ok" if i["gemini_key"] else "warn", "Gemini key (the brain): %s" % ("set" if i["gemini_key"] else "missing"))
+    say("ok" if i["fish_key"] else "dim", "Fish Audio film voice: %s" % ("set" if i["fish_key"] else "not set (optional; Gemini's own voice is used)"))
     say("ok" if i["browser"] else "warn", "Browser for automation: %s" % (os.path.basename(i["browser"]) if i["browser"] else "none found (Chromium will be downloaded)"))
-    say("ok" if i["node"] else "dim", "Node.js (some MCP servers): %s" % ("found" if i["node"] else "not found (optional)"))
     say("ok" if i["blender"] else "dim", "Blender: %s" % (i["blender"] or "not found (optional)"))
     say("ok" if i["roblox_studio"] else "dim", "Roblox Studio: %s" % ("found" if i["roblox_studio"] else "not found (optional)"))
-    say("ok", "Current brain: %s%s" % (i["brain"], " · " + i["brain_model"] if i["brain_model"] else ""))
 
 
 def read_line(prompt, timeout=240):
@@ -180,170 +160,66 @@ def ask(question, default=True, timeout=25):
 
 
 # ---------------------------------------------------------------------------------------------
-def setup(local="ask", quiet=False):
-    import jv_models, jv_auto, jv_mcp
+def setup(quiet=False):
+    import jv_auto, jv_mcp
     state = load(STATE, {})
     info = scan()
     print_scan(info)
     problems = []
 
-    # 0. Free cloud AI (fast, smart, no card) -------------------------------------------------
+    # 1. Gemini key ---------------------------------------------------------------------------
     cfg = load(CFG, {})
-    if not state.get("free_asked") and not (cfg.get("api_key") or cfg.get("groq_key")):
+    if not cfg.get("api_key"):
         import webbrowser
         print()
-        say("step", "Free AI brain (recommended: fast and smart, costs nothing)")
-        say("dim", "JARVIS uses free keys from Google Gemini (thinking) and Groq (instant backup + hearing you).")
-        say("dim", "Opening both pages: sign in, press 'Create API key', copy it, paste it here and press Enter.")
-        say("dim", "(Press Enter to skip one.)")
+        say("step", "Gemini key (free): JARVIS thinks, hears, sees and speaks with Google Gemini")
+        say("dim", "Opening aistudio.google.com/apikey: sign in, press 'Create API key', copy it, paste it here and press Enter.")
         try:
             webbrowser.open("https://aistudio.google.com/apikey")
         except Exception:
             pass
-        g = read_line("Gemini key: ")
-        try:
-            webbrowser.open("https://console.groq.com/keys")
-        except Exception:
-            pass
-        q = read_line("Groq key:   ")
-        state["free_asked"] = True
-        save(STATE, state)
-        if g or q:
-            cfg_set(**({"api_key": g} if g else {}), **({"groq_key": q} if q else {}), brain_provider="auto", stt_mode="auto")
-            say("ok", "Free AI brain ready (%s)" % " + ".join(x for x, k in (("Gemini", g), ("Groq", q)) if k))
-            local = "no"   # cloud AI only
+        k = read_line("Gemini key: ")
+        if k:
+            cfg_set(api_key=k)
+            say("ok", "Gemini key saved")
         else:
-            say("warn", "Skipped. You can add the keys any time in Configuration (cog) > Free AI.")
-    elif cfg.get("brain_provider") in ("ollama", "gemini-live") and (cfg.get("api_key") or cfg.get("groq_key")):
-        cfg_set(brain_provider="auto", stt_mode="auto", vision_model="")
-        say("ok", "Brain set to Best free AI (cloud: Gemini, Groq)")
-    if cfg.get("brain_provider") == "ollama" and not (cfg.get("api_key") or cfg.get("groq_key")):
-        cfg_set(brain_provider="auto")   # no local brain any more: JARVIS opens Configuration for the free keys
+            say("warn", "Skipped: JARVIS will open Configuration so you can paste it.")
+            problems.append("no Gemini key")
 
-    # 0b. The user prefers cloud AI: offer once to remove the local AI engine and its models ---------
-    cfg = load(CFG, {})
-    if not state.get("local_removal_asked") and info["ollama_installed"] and cfg.get("brain_provider") != "ollama":
-        state["local_removal_asked"] = True
+    # 2. Leftovers from the local-AI version ---------------------------------------------------
+    if not state.get("cleanup_v5"):
+        state["cleanup_v5"] = True
         save(STATE, state)
-        models_dir = Path.home() / ".ollama" / "models"
-        size = sum(f.stat().st_size for f in models_dir.rglob("*") if f.is_file()) / 2 ** 30 if models_dir.exists() else 0
-        print()
-        say("dim", "JARVIS now uses free cloud AI only. The local AI engine (Ollama) and its models are still on this PC (%.1f GB)." % size)
-        if ask("Remove the local AI to free the space?", default=True):
-            try:
-                subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True) if IS_WIN else subprocess.run(["pkill", "ollama"], capture_output=True)
-                subprocess.run(["taskkill", "/F", "/IM", "ollama app.exe"], capture_output=True) if IS_WIN else None
-                if models_dir.exists():
-                    shutil.rmtree(models_dir, ignore_errors=True)
-                if IS_WIN:
-                    subprocess.run(["winget", "uninstall", "-e", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements"], capture_output=True, timeout=600)
-                cfg_set(local_fallback=False, vision_model="")
-                state["local_ai"] = False
-                save(STATE, state)
-                say("ok", "Local AI removed (%.1f GB freed)." % size)
-            except Exception as e:
-                say("warn", "Could not remove everything (%s). Windows Settings > Apps > Ollama can uninstall it." % str(e)[:100])
-
-    # 1. Local AI -------------------------------------------------------------------------------
-    have = [m for m in info["best"] if m in info["models"]]
-    want_local = state.get("local_ai")
-    if local == "yes":
-        want_local = True
-    elif local == "no" or local == "ask":
-        want_local = bool(want_local) and local != "no" and load(CFG, {}).get("brain_provider") == "ollama"
-    elif want_local is None:
-        gb = "%d-%d GB" % ((4, 8) if info["vram_gb"] < 8 else (6, 14) if info["vram_gb"] < 20 else (20, 70))
-        print()
-        say("dim", "JARVIS can think with a FREE AI that runs on this PC (private, no API key, works offline).")
-        say("dim", "Best for this PC: %s (thinks and uses tools) + %s (sees the screen). Download: about %s." % (info["best"][0], info["vision"], gb))
-        if not info["vram_gb"]:
-            say("warn", "No NVIDIA graphics card found: it will run on the processor, which is slow. A cloud brain (Gemini/Claude/GPT key) is faster.")
-        want_local = ask("Set up the free local AI?", default=bool(info["vram_gb"]) or info["ram_gb"] >= 16)
-        state["local_ai"] = want_local
-        save(STATE, state)
-    if want_local and not have:
-        say("step", "Setting up the local AI")
-        why = jv_models.install_ollama(lambda t, f=None: say("dim", t))
-        if why:
-            say("bad", why)
-            problems.append(why)
-        else:
-            chosen = ""
-            for m in info["best"]:
-                try:
-                    say("dim", "Downloading %s ..." % m)
-                    jv_models.ollama_pull(m, lambda t, f: bar(t, f))
-                    print()
-                    chosen = m
-                    break
-                except Exception as e:
-                    print()
-                    say("warn", "%s not available (%s); trying the next choice" % (m, str(e)[:80]))
-            vis = ""
-            if chosen:
-                try:
-                    say("dim", "Downloading %s (vision) ..." % info["vision"])
-                    jv_models.ollama_pull(info["vision"], lambda t, f: bar(t, f))
-                    print()
-                    vis = info["vision"]
-                except Exception as e:
-                    print()
-                    say("warn", "Vision model skipped (%s)" % str(e)[:80])
-                cfg_set(brain_provider="ollama", brain_model=chosen, brain_url="", vision_model=vis, stt_mode="local")
-                say("ok", "Local brain ready: %s%s" % (chosen, " + " + vis if vis else ""))
-            else:
-                problems.append("No local model could be downloaded.")
-    elif want_local and have:
-        if not jv_models.ollama_up():
-            jv_models.install_ollama(lambda t, f=None: None)   # just start the server
         cfg = load(CFG, {})
-        if cfg.get("brain_provider", "gemini-live") == "gemini-live" and not cfg.get("api_key"):
-            cfg_set(brain_provider="ollama", brain_model=have[0], stt_mode="local")
-        say("ok", "Local brain ready: %s" % have[0])
-
-    # 2. Free voice ----------------------------------------------------------------------------
-    if not state.get("voice_ok"):
-        say("step", "Preparing the free JARVIS voice (Kokoro, about 340 MB once)")
-        try:
-            class _Core:
-                cfg = load(CFG, {})
-                voice_dir = DATA / "voices"
-
-                def post(self, *a):
-                    if a and a[0] == "status" and len(a) > 1 and a[1]:
-                        say("dim", a[1])
-
-                def ui(self, ev):
-                    pass
-            pcm = jv_models.kokoro_pcm(_Core(), "Systems online.")
-            if len(pcm) > 1000:
-                state["voice_ok"] = True
-                save(STATE, state)
-                cfg = load(CFG, {})
-                if not cfg.get("fish_key") and cfg.get("tts_mode", "auto") in ("auto", ""):
-                    cfg_set(tts_mode="kokoro", kokoro_voice=cfg.get("kokoro_voice") or "bm_george")
-                say("ok", "Voice ready (George, British)")
-        except Exception as e:
-            say("warn", "Voice not ready (%s). JARVIS will use a built-in voice and retry later." % str(e)[:120])
-
-    # 3. Local speech recognition --------------------------------------------------------------
-    if not state.get("whisper_ok"):
-        say("step", "Preparing local speech recognition (faster-whisper)")
-        try:
-            if info["vram_gb"] and IS_WIN:
-                # GPU speech recognition needs NVIDIA's CUDA 12 libraries; they come as pip packages (about 1 GB, optional)
+        for k in ("brain_provider", "brain_model", "brain_key", "brain_url", "brain_think", "brain_ctx", "tool_limit", "vision_model", "groq_key",
+                  "openrouter_key", "local_fallback", "stt_mode", "tts_mode", "tts_voice", "kokoro_voice", "kokoro_speed"):
+            cfg.pop(k, None)
+        save(CFG, cfg)
+        for d in (DATA / "voices",):
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+        if info["ollama"]:
+            models_dir = Path.home() / ".ollama" / "models"
+            size = sum(f.stat().st_size for f in models_dir.rglob("*") if f.is_file()) / 2 ** 30 if models_dir.exists() else 0
+            print()
+            say("dim", "The local AI engine (Ollama) from the earlier version is still installed (%.1f GB of models)." % size)
+            if ask("Remove it to free the space?", default=True):
                 try:
-                    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"], timeout=1800)
-                except Exception:
-                    pass
-            jv_models.local_transcribe(b"\x00\x00" * 16000)
-            state["whisper_ok"] = True
-            save(STATE, state)
-            say("ok", "Speech recognition ready (on the %s)" % ("graphics card" if jv_models._whisper.get("device") == "cuda" else "processor"))
-        except Exception as e:
-            say("warn", "Speech recognition not ready (%s); it will be retried when first used." % str(e)[:120])
+                    if IS_WIN:
+                        subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True)
+                        subprocess.run(["taskkill", "/F", "/IM", "ollama app.exe"], capture_output=True)
+                    else:
+                        subprocess.run(["pkill", "ollama"], capture_output=True)
+                    shutil.rmtree(models_dir, ignore_errors=True)
+                    if IS_WIN:
+                        subprocess.run(["winget", "uninstall", "-e", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements"], capture_output=True, timeout=600)
+                    say("ok", "Removed (%.1f GB freed)." % size)
+                except Exception as e:
+                    say("warn", "Could not remove everything (%s). Windows Settings > Apps > Ollama can uninstall it." % str(e)[:100])
+        for pkg in ("kokoro-onnx", "faster-whisper", "ctranslate2", "nvidia-cublas-cu12", "nvidia-cudnn-cu12"):
+            subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", pkg], capture_output=True)
 
-    # 4. Automation browser --------------------------------------------------------------------
+    # 3. Automation browser --------------------------------------------------------------------
     if not state.get("browser_ok"):
         try:
             jv_auto.ensure("playwright")
@@ -356,7 +232,7 @@ def setup(local="ask", quiet=False):
         except Exception as e:
             say("warn", "Browser automation not ready (%s)" % str(e)[:120])
 
-    # 5. MCP: connect what is on this PC -------------------------------------------------------
+    # 4. MCP: connect what is on this PC -------------------------------------------------------
     if not state.get("mcp_scanned"):
         class _C:
             cfg = {}
@@ -373,34 +249,24 @@ def setup(local="ask", quiet=False):
             if n:
                 say("ok", "Imported %d MCP servers from Claude Desktop / Cursor" % n)
             cfg = hub.config()
-            added = []
             if info["blender"] and "blender" not in cfg["mcpServers"]:
                 cfg["mcpServers"]["blender"] = {k: v for k, v in jv_mcp.PRESETS["blender"].items() if k in ("command", "args")}
-                added.append("blender")
-            if info["node"] and "thinking" not in cfg["mcpServers"]:
-                cfg["mcpServers"]["thinking"] = {k: v for k, v in jv_mcp.PRESETS["thinking"].items() if k in ("command", "args")}
-                added.append("thinking")
-            if added:
                 save(hub.file, cfg)
-                say("ok", "Added MCP servers: %s" % ", ".join(added))
-                if "blender" in added:
-                    say("dim", "Blender: run  uvx blender-mcp install-addon  once, then in Blender press N > BlenderMCP > Start MCP Server.")
+                say("ok", "Added the Blender MCP server")
+                say("dim", "Blender: run  uvx blender-mcp install-addon  once, then in Blender press N > BlenderMCP > Start MCP Server.")
             if info["roblox_studio"] and not any("rbx" in json.dumps(v).lower() or "roblox" in k.lower() for k, v in cfg["mcpServers"].items()):
-                say("dim", "Roblox Studio found. For the Studio tools, install the Roblox Studio MCP server (github.com/Roblox/studio-rust-mcp-server), then run this launcher again.")
+                say("dim", "Roblox Studio found. For Studio tools, install the Roblox Studio MCP server (github.com/Roblox/studio-rust-mcp-server), then run this again.")
             state["mcp_scanned"] = True
             save(STATE, state)
         except Exception as e:
             say("warn", "MCP scan skipped (%s)" % str(e)[:100])
 
-    cfg = load(CFG, {})
-    if not (cfg.get("api_key") or cfg.get("groq_key") or cfg.get("brain_provider") == "ollama"):
-        say("warn", "No brain yet: JARVIS will open Configuration so you can add a free key.")
     state["last_setup"] = time.strftime("%Y-%m-%d %H:%M")
     state["complete"] = not problems
-    state["v"] = 4
+    state["v"] = 5
     save(STATE, state)
     print()
-    say("ok" if not problems else "warn", "Setup finished%s." % ("" if not problems else " with warnings: " + "; ".join(problems)))
+    say("ok" if not problems else "warn", "Setup finished%s." % ("" if not problems else " (" + "; ".join(problems) + ")"))
     return 0
 
 
@@ -410,8 +276,5 @@ if __name__ == "__main__":
         print_scan(scan())
         sys.exit(0)
     if a[0] == "setup":
-        local = "ask"
-        if "--local" in a and a.index("--local") + 1 < len(a):
-            local = a[a.index("--local") + 1]
-        sys.exit(setup(local, "--quiet" in a))
+        sys.exit(setup("--quiet" in a))
     print(__doc__)

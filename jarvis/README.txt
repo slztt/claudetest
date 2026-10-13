@@ -1,6 +1,6 @@
 J.A.R.V.I.S.
 A voice-first assistant with a holographic HUD that can operate your PC.
-JARVIS-3: works with almost any AI model, a 3D wireframe hologram interface and a holographic Earth with live satellites.
+JARVIS-3: Gemini Live brain with continuous sight, a 3D hologram interface, holographic Earth, calendar, camera tracking and screen panels.
 
 INSTALL: ONE FILE
 Windows: double-click JARVIS.bat. That is all. It works on its own too (download just that file and run it).
@@ -8,16 +8,13 @@ It scans the PC and sets up everything that is missing, then launches JARVIS:
   1. finds JARVIS next to it, or downloads it from GitHub into %LOCALAPPDATA%\JARVIS\app
   2. finds a 64-bit Python 3.11-3.13, or installs Python 3.12 for you (winget, else python.org)
   3. builds JARVIS's own environment and installs every package (core, wake word, automation, voice, speech)
-  4. scans your graphics card and asks once whether to install the FREE local AI (Ollama + the best model for
-     your GPU + a vision model); answers itself after 25 seconds if you walk away
-  5. downloads the free British voice and local speech recognition, a browser for automation if you have none,
-     and connects MCP servers it finds (Claude Desktop config, Blender, Node-based thinking tools)
+  4. asks for your free Gemini key (opens aistudio.google.com/apikey for you)
+  5. prepares PC automation (a browser for it if you have none) and connects MCP servers it finds
   6. makes the app: Start menu + desktop "JARVIS" with its icon, plus "JARVIS Setup and Repair" and "JARVIS Update";
      asks once whether JARVIS should start with Windows
-  7. starts the local AI engine if needed and launches JARVIS (first run opens Configuration if no brain is set)
-Later runs take a second: a health check, then launch. Options: JARVIS.bat repair | update | nolocal | nolaunch.
+  7. launches JARVIS (first run opens Configuration if the key is missing)
+Later runs take a second: a health check, then launch. Options: JARVIS.bat repair | update | nolaunch.
 Mac/Linux: ./start.sh does the same (Linux also needs: sudo apt install libportaudio2).
-Want a cloud brain instead? Paste a Gemini key (aistudio.google.com/apikey) or any provider's key in Configuration.
 
 THE FILM VOICE (Fish Audio)
 - JARVIS speaks with the "Jarvis (MCU) J.A.R.V.I.S" voice from Fish Audio:
@@ -81,19 +78,6 @@ Stored in ~/.jarvis/personal/. Offline mode (Settings) blocks every network tool
 Not built (needs hardware or services that do not exist here): AR headset control, joining meetings as you, real
 gesture tracking beyond single camera frames, direct dealings with other AI services beyond api_request.
 
-JARVIS-3: ANY MODEL
-Configuration (cog) > AI model provider. Choose one:
-  Gemini Live (default, native voice) · Anthropic Claude · OpenAI · Google Gemini text models · OpenRouter (hundreds of models)
-  · Groq · Mistral · DeepSeek · xAI Grok · Together · Ollama (local) · LM Studio (local) · any custom OpenAI-compatible server.
-Paste the provider's key (local models need none), press List to see every model your key can use, pick one, press Test model.
-Every tool, the authorisation cards, the background worker and the hologram work the same with every provider.
-Voice with non-Gemini models: the wake word still runs on your PC. Speech is turned into text by the provider's Whisper
-(OpenAI, Groq), by Gemini if you also keep a Gemini key, or entirely on your PC with "pip install faster-whisper".
-Replies are spoken by the Fish Audio film voice if you have a key, OpenAI's voice when OpenAI is the provider, or your
-computer's own voice (Windows/macOS built in; Linux needs espeak-ng). Choose under Voice input / Voice output.
-Screenshots ("look at this") are sent to the model as images, so pick a vision-capable model for that.
-Small local models may not support tools; JARVIS then still chats but cannot act.
-
 JARVIS-3: HOLOGRAPHIC EARTH
 Press G (or the globe button, top right), or just ask: "show me the Earth", "where is the ISS?", "track Hubble",
 "take me to Tokyo", "ride along with the space station", "show the GPS satellites", "set my home to Leeds".
@@ -110,23 +94,6 @@ JARVIS-3: ACCESSIBILITY
 Configuration > Accessibility: reduce motion (also follows your system setting), high contrast, captions on/off and
 text/panel size. Every button has a label, JARVIS's replies are read out by screen readers, the authorisation card is a
 proper dialog, and everything on the hologram (satellite readouts, places) is also written out as text.
-
-JARVIS-3: FREE LOCAL AI (THINKS, PRIVATE, NO KEY)
-Configuration (cog) > "Set up local AI". One click: installs Ollama, checks your graphics card, downloads the best free
-model your PC can run, plus a small vision model so it can see your screen, and switches JARVIS to it with a local voice.
-  60 GB+ (big Mac / workstation): gpt-oss:120b    22-32 GB GPU: Qwen3.6 35B (or qwen3:30b)    14-16 GB: gpt-oss:20b
-  8-12 GB: Qwen3.5 9B (or qwen3:8b)               less / no GPU: qwen3:4b (works on the CPU, slowly)
-These "think" before answering (Thinking setting: automatic, always, hard, briefly, off) and call tools.
-JARVIS talks to Ollama natively, so the model gets a large context (8-32k depending on your GPU) instead of Ollama's tiny
-default, and only the ~30 tools that matter for each request are sent (small models get confused by 80+). That is what
-made local models feel "really bad" before. A bigger GPU = a smarter JARVIS. Hosted models (Claude, GPT, Gemini) are
-still smarter than any model a home PC can run; you can switch at any time.
-
-JARVIS-3: FREE VOICE
-Voice output > Kokoro: a free, offline, natural British voice ("George" is the most JARVIS-like; also Lewis, Daniel,
-Fable). Downloads once (about 340 MB) and runs on the CPU faster than real time. It works with every brain, including
-Gemini Live. Fish Audio's film voice is still available if you have a key. Speech recognition runs locally too
-(faster-whisper), so a local setup sends nothing to the internet except searches and web pages.
 
 JARVIS-3: MCP (ROBLOX STUDIO, BLENDER AND MORE)
 Configuration > MCP servers. Add a preset or import what you already set up for Claude Desktop / Cursor:
@@ -186,13 +153,13 @@ Only the microphone, transcript and settings buttons stay on screen (plus stop w
 when you ask: "open the calendar", "show the Earth", "open the Control Centre", "open the camera" (keys: C, G, J, O).
 Empty side panels hide themselves.
 
-Speech recognition now uses your NVIDIA card when its CUDA libraries are installed (JARVIS.bat repair adds them) and falls
-back to the processor automatically otherwise.
 
-JARVIS-3: THE BEST FREE BRAIN (DEFAULT)
-"Best free AI" uses two free keys and needs no card: Google Gemini (aistudio.google.com/apikey) does the thinking and
-Groq (console.groq.com/keys) is the instant backup and hears you (Whisper). JARVIS picks the newest free models each
-service offers, skips one that is busy or rate limited, and uses your local Ollama model only as the last fallback.
-The launcher asks for the keys (and opens both pages); you can also paste them in Configuration > Free AI.
-Local models now answer quickly too: no "thinking" for normal conversation (only for background work), a smaller context,
-and the model is loaded into memory at start-up. While he works, the HUD shows how long he has been thinking; Esc cancels.
+
+JARVIS-3: SEEING AND CONTROLLING
+Gemini Live is the brain: it hears you, speaks, uses every tool and sees.
+- "Watch my screen" (live view): while he is listening or talking, Gemini sees your screen about once a second, so he can
+  follow what you do, guide you step by step and check his own actions. He switches it on himself for multi-step jobs.
+  "Watch me" does the same with the camera. "Stop watching" turns it off.
+- "Look at this" takes a single look. The camera HUD tracks your face, hands and body.
+- Long conversations no longer drop: the Live session compresses old context and resumes on a new connection
+  automatically, keeping the conversation.

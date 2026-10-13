@@ -1,7 +1,7 @@
 #!/bin/bash
 # J.A.R.V.I.S. one-file launcher for macOS and Linux: sets everything up on first run, then launches.
 #   ./start.sh            set up what is missing, then launch
-#   ./start.sh repair     rescan and repair       ./start.sh nolocal   skip the local AI       ./start.sh nolaunch
+#   ./start.sh repair     rescan and repair       ./start.sh nolaunch   set up only
 cd "$(dirname "$0")"
 APP="$(pwd)"
 ARGS=" $* "
@@ -34,9 +34,8 @@ group requirements-wake.txt wake3.flag "the wake word" 0
 group requirements-auto.txt auto1.flag "the power packages" 0
 
 # scan the PC and set up the local AI, voice, speech, browser and MCP servers
-LOCAL=ask; [[ "$ARGS" == *" nolocal "* ]] && LOCAL=no
-if [[ "$ARGS" == *" repair "* ]] || ! grep -q '"complete": true' "$HOME/.jarvis/setup.json" 2>/dev/null || ! grep -q '"v": 4' "$HOME/.jarvis/setup.json" 2>/dev/null; then
-  venv/bin/python jv_setup.py setup --local $LOCAL
+if [[ "$ARGS" == *" repair "* ]] || ! grep -q '"complete": true' "$HOME/.jarvis/setup.json" 2>/dev/null || ! grep -q '"v": 5' "$HOME/.jarvis/setup.json" 2>/dev/null; then
+  venv/bin/python jv_setup.py setup
 else
   say 96 "  OK" "Health check passed (./start.sh repair to rescan)"
 fi
@@ -64,8 +63,5 @@ elif [ "$(uname)" = "Darwin" ]; then
 fi
 
 [[ "$ARGS" == *" nolaunch "* ]] && exit 0
-if grep -q '"brain_provider": "ollama"' "$HOME/.jarvis/config.json" 2>/dev/null && ! curl -s -m 2 http://localhost:11434/api/version >/dev/null; then
-  command -v ollama >/dev/null && (ollama serve >/dev/null 2>&1 &)
-fi
 say 97 " >>>" "Launching J.A.R.V.I.S."
 exec venv/bin/python jarvis.py

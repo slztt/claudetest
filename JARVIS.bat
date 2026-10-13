@@ -18,13 +18,12 @@ exit /b %JV_RC%
 # =====================================================================================================
 #  J.A.R.V.I.S. one-file launcher
 #  Double-click it. First run: finds or downloads JARVIS, installs Python if needed, builds the
-#  environment, scans the PC, installs the free local AI (Ollama + the best model for your graphics
-#  card), the free voice and local speech recognition, connects Blender / Roblox Studio MCP servers,
-#  creates the Start menu + desktop app, then launches JARVIS.
+#  environment, asks for your free Gemini key, prepares PC automation, connects Blender / Roblox Studio
+#  MCP servers, creates the Start menu + desktop app, then launches JARVIS.
 #  Later runs: quick health check, fix anything missing, launch.
 #  Options (add after the file name, or use the Start menu entries):
 #    repair   run the full scan and setup again        update   download the newest JARVIS (keeps your data)
-#    nolocal  skip the local AI                        nolaunch set up only
+#    nolaunch set up only
 # =====================================================================================================
 $ErrorActionPreference = 'Continue'   # native tools (pip, winget) write warnings to stderr; failures are checked explicitly
 $ProgressPreference = 'SilentlyContinue'
@@ -153,11 +152,10 @@ Pip-Group 'requirements-auto.txt' 'auto1.flag' 'the power packages (automation, 
 # ---------------------------------------------------------------- 4. scan the PC and set up everything else
 $state = Join-Path $env:USERPROFILE '.jarvis\setup.json'
 $needSetup = (Has 'repair') -or -not (Test-Path $state)
-if (-not $needSetup) { try { $st = Get-Content $state -Raw | ConvertFrom-Json; $needSetup = (-not $st.complete) -or (-not $st.v) -or ($st.v -lt 4) } catch { $needSetup = $true } }
+if (-not $needSetup) { try { $st = Get-Content $state -Raw | ConvertFrom-Json; $needSetup = (-not $st.complete) -or (-not $st.v) -or ($st.v -lt 5) } catch { $needSetup = $true } }
 if ($needSetup) {
   Write-Host ""
-  $local = 'ask'; if (Has 'nolocal') { $local = 'no' }
-  & $VPy (Join-Path $App 'jv_setup.py') setup --local $local
+  & $VPy (Join-Path $App 'jv_setup.py') setup
 } else {
   Say ok "Health check passed (run the 'JARVIS Setup and Repair' shortcut to rescan)"
 }
@@ -190,17 +188,6 @@ try {
 
 # ---------------------------------------------------------------- 6. launch
 if (Has 'nolaunch') { Say ok "Setup complete."; exit 0 }
-try {
-  $cfg = Get-Content (Join-Path $env:USERPROFILE '.jarvis\config.json') -Raw -ErrorAction Stop | ConvertFrom-Json
-  if ($cfg.brain_provider -eq 'ollama') {
-    $up = $false; try { Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:11434/api/version' -TimeoutSec 2 | Out-Null; $up = $true } catch {}
-    if (-not $up) {
-      $ol = (Get-Command ollama -ErrorAction SilentlyContinue).Source
-      if (-not $ol) { $ol = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe' }
-      if (Test-Path $ol) { Start-Process -FilePath $ol -ArgumentList 'serve' -WindowStyle Hidden; Say ok "Started the local AI engine" }
-    }
-  }
-} catch {}
 Say step "Launching J.A.R.V.I.S."
 Start-Process -FilePath $VPyw -ArgumentList ('"' + (Join-Path $App 'jarvis.py') + '"') -WorkingDirectory $App
 try { Stop-Transcript | Out-Null } catch {}

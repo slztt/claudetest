@@ -16,16 +16,14 @@ Claude loads these automatically when a task matches. You can also run one by na
 
 Voice-first desktop assistant with a holographic HUD, unpacked from `JARVIS-2 (1).zip` and upgraded to JARVIS-3:
 
-- **Any model**: Gemini Live, Claude, OpenAI, Gemini text models, OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, Ollama, LM Studio, or any OpenAI-compatible server (`jarvis/jv_models.py`).
+- **Gemini Live brain** with continuous sight (live screen / camera view), session resumption and context compression.
 - **3D wireframe hologram HUD**: hex holo-floor, projector beam, radar sweep, wireframe drones, glitch FX (`jarvis/hud/scene.js`).
 - **Holographic Earth**: dot-matrix continents, coastlines, live day/night terminator, real satellites from CelesTrak via SGP4, target lock and satellite ride-along view (`jarvis/hud/globe.js`). The model can drive it through the `hologram` tool.
 - **Accessibility**: reduced motion, high contrast, captions, text size, hologram speed, screen-reader labels and keyboard control.
-- **Free local AI**: one-click Ollama setup that picks the best thinking model for your GPU, native Ollama API with large context, tool routing, local vision helper (`jarvis/jv_models.py`).
-- **Free voice**: Kokoro British voice (offline) and local speech recognition (faster-whisper).
 - **MCP client**: Roblox Studio, Blender, Playwright, GitHub and any MCP server; tools work with every model (`jarvis/jv_mcp.py`).
 - **Autonomy**: standing orders, autopilot, background deep research with cited reports (`jarvis/jv_power.py`).
 - **PC control**: UI Automation, OCR click, Playwright browser, wait_for, scheduled routines (`jarvis/jv_auto.py`).
 - **Calendar**: month/week/day/agenda/year holographic views with recurring events and natural-language add (`jarvis/jv_calendar.py`, `jarvis/hud/calendar.js`).
 - **Generated holograms**: JARVIS designs objects from parts or loads .glb/.obj/.stl files (`jarvis/hud/holo.js`).
 
-**Install:** download [`JARVIS.bat`](JARVIS.bat) and double-click it. It downloads JARVIS, installs Python and every package, sets up the free local AI, voice and speech, creates the Start menu / desktop app and launches it. (Or unzip `JARVIS-3.zip` and run `JARVIS.bat` inside; Mac/Linux: `./start.sh`.) See `jarvis/README.txt`.
+**Install:** download [`JARVIS.bat`](JARVIS.bat) and double-click it. It downloads JARVIS, installs Python and every package, asks for your free Gemini key, creates the Start menu / desktop app and launches it. (Or unzip `JARVIS-3.zip` and run `JARVIS.bat` inside; Mac/Linux: `./start.sh`.) See `jarvis/README.txt`.
