@@ -417,11 +417,25 @@ async function boot(initial) {
 }
 
 async function start() {
+  // Inside the JARVIS window (?app=1) the Python bridge always comes, sometimes seconds after the page: wait for it and NEVER
+  // fall back to the preview animation (it fakes mic levels and speaking, which looks like a broken microphone).
+  const inApp = new URLSearchParams(location.search).has('app');
+  const note = (t) => { const pre = $('#boot-log'); if (pre && !pre.dataset.link) { pre.dataset.link = 1; const s = document.createElement('span'); s.textContent = t; s.style.animationDelay = '0s'; pre.appendChild(s); } };
   let initial = null;
-  for (let i = 0; i < 80 && !initial; i++) {          // wait for the Python bridge
-    if (!window.pywebview && i >= 6) break;            // plain browser: no bridge will ever appear
-    initial = await call('ready');
-    if (!initial) await new Promise((r) => setTimeout(r, 100));
+  const t0 = Date.now();
+  const limit = inApp ? 90000 : 700;
+  while (!initial && Date.now() - t0 < limit) {
+    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.ready === 'function') {
+      try { initial = await window.pywebview.api.ready(); } catch (e) { initial = null; }
+    }
+    if (!initial) {
+      if (inApp && Date.now() - t0 > 2500) note('LINKING TO CORE ........ PLEASE WAIT');
+      await new Promise((r) => { const done = () => { window.removeEventListener('pywebviewready', done); r(); }; window.addEventListener('pywebviewready', done); setTimeout(done, 150); });
+    }
+  }
+  if (!initial && inApp) {
+    $('#boot-log').innerHTML = '<span style="opacity:1;color:#ff5a6e">COULD NOT LINK TO THE JARVIS CORE.<br>CLOSE JARVIS AND START IT AGAIN.<br>IF IT KEEPS HAPPENING, RUN "JARVIS SETUP AND REPAIR".</span>';
+    return;
   }
   if (!initial) initial = demo();                      // opened in a plain browser: preview mode
   await boot(initial);

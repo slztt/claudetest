@@ -1029,6 +1029,15 @@ class AudioIO:
 
     def _cb(self, indata, frames, t, status):
         a = indata[:, 0].astype(np.float32) / 32768
+        if not np.any(indata):                        # exact digital silence: the mic is muted in Windows or blocked by privacy settings
+            self.zero_blocks = getattr(self, "zero_blocks", 0) + 1
+            if self.zero_blocks == 80:                # about 5 seconds
+                self.error = ("Your microphone is sending complete silence: it is muted, or Windows is blocking it. Check Settings > Privacy > "
+                              "Microphone (allow desktop apps), the mute switch on the mic or headset, and the Microphone choice in Configuration.")
+        else:
+            if getattr(self, "zero_blocks", 0) >= 80 and self.error.startswith("Your microphone is sending complete silence"):
+                self.error = ""
+            self.zero_blocks = 0
         a = a - float(a.mean())                       # many mics have a DC offset that reads as constant "sound"
         raw = min(1.0, float(np.sqrt(np.mean(a * a))) * 6)
         self.raw_level = raw
@@ -1594,7 +1603,11 @@ class Core:
                     self.ui(self.lists_payload())
                 if self.stats:
                     self.ui(self.stats)
+            if not self.audio.error and getattr(self, "_shown_err", "") and self.loaded:
+                self._shown_err = ""
+                self.ui({"t": "status", "text": ""})
             if self.audio.error and n % 100 == 0 and self.loaded:
+                self._shown_err = self.audio.error
                 self.ui({"t": "status", "text": self.audio.error})
 
     def _stats_loop(self):
@@ -2549,7 +2562,7 @@ def main():
     except Exception:
         pass
     core = Core()
-    url = "http://127.0.0.1:%d/index.html" % serve_hud()
+    url = "http://127.0.0.1:%d/index.html?app=1" % serve_hud()   # ?app=1: the HUD waits for this program instead of showing its preview
     core.window = webview.create_window(
         APP, url, js_api=Api(core), width=1360, height=840, min_size=(1000, 660),
         frameless=True, easy_drag=False, background_color="#02060c", text_select=False)
