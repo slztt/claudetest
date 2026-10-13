@@ -22,6 +22,8 @@ from jv_auto import AUTO_TOOLS
 import jv_mcp
 import jv_power
 import jv_roblox
+import jv_homework
+import jv_video
 import jv_win
 from jv_power import POWER_TOOLS
 from jv_tools import NEW_TOOLS, search_results as jv_tools_search, fetch_text as jv_tools_fetch
@@ -1633,8 +1635,10 @@ class Core:
         self.power = jv_power.Power(self, DATA, jv_tools_search, jv_tools_fetch)  # JARVIS-3: deep research, standing orders, autopilot
         self.roblox = jv_roblox.Bridge(self)                                 # Roblox Studio control through JARVIS's own plugin
         self.dialogs = jv_win.DialogWatcher(self)                            # auto-OK error pop-ups during automation
+        self.homework = jv_homework.Homework(self)                           # Homework tab: answers in text and voice
+        self.video = jv_video.Video(self, resolve_path)                      # video editing (FFmpeg) and CapCut hand-off
         self.mcp = jv_mcp.Hub(self, DATA)                                     # JARVIS-3: MCP servers (Roblox Studio, Blender, ...)
-        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + jv_roblox.ROBLOX_TOOLS + jv_win.WIN_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
+        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + jv_roblox.ROBLOX_TOOLS + jv_win.WIN_TOOLS + jv_homework.HOMEWORK_TOOLS + jv_video.VIDEO_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._stats_loop, daemon=True).start()
         threading.Thread(target=self._live_view_loop, daemon=True).start()
@@ -1834,6 +1838,9 @@ class Core:
             "click things in Studio for you; if status says it is not connected, open Studio yourself and tell them only if a restart of Studio "
             "is needed). Open apps by their real names, e.g. 'Roblox Player', 'Roblox Studio'. Error pop-ups that appear while you work are "
             "pressed OK automatically and their text is added to the tool result: read it and fix the cause. "
+            "HOMEWORK: when the user asks a homework question or says homework mode, use the homework tool (it opens the Homework tab, "
+            "shows the answer and you then read it aloud), honouring their length, level and detail. VIDEO: edit videos with video_edit "
+            "(chain actions, each returns the new file); to finish in CapCut use video_edit capcut. "
             "Discord: send messages through send_message (it drives the Discord app); never ask for or use a Discord user token. STANDING ORDERS FROM THE USER (always follow them): " + (self.power.orders() if hasattr(self, "power") else "") + " " + "The holographic HUD: the calendar tool's show action opens the calendar UI on any month/week/day; "
             "the hologram tool shows the 3D Earth and satellites. " + jv_core.prompt_addendum(self) + " Environment: %s, user folder %s. Known contacts: %s. Current local time: %s. "
             "The user's tasks: %s. The user's notes: %s." % (
@@ -1905,6 +1912,10 @@ class Core:
                     r = self.roblox.handle(name, a)
                 if r is None:
                     r = self.dialogs.handle(name, a)
+                if r is None:
+                    r = self.homework.handle(name, a)
+                if r is None:
+                    r = self.video.handle(name, a)
                 if r is None and name == "camera_look" and "open" in str(self._hud_js("vision", {"action": "status"})).lower()[:20]:
                     r = self._tool("vision", {"action": "snapshot"})   # the HUD already owns the camera
                 if r is None and (name == "mcp" or "__" in name):
@@ -2196,6 +2207,33 @@ class Api:
         a = self._c.audio
         a.muted = not a.muted
         return a.muted
+
+    def hw_answer(self, question, opts=None, from_screen=False):
+        c, o = self._c, dict(opts or {})
+        img = None
+        if from_screen:
+            try:
+                if c.window:                          # step aside so the worksheet behind JARVIS is visible
+                    c.window.minimize()
+                    time.sleep(0.7)
+                img, _ = c.comp.screenshot("screen")
+            except Exception as e:
+                return {"error": "Could not see the screen: %s" % e}
+            finally:
+                try:
+                    c.window and c.window.restore()
+                except Exception:
+                    pass
+        try:
+            r = c.homework.answer(str(question or ""), image=img, **{k: str(o.get(k) or "") for k in ("subject", "level", "length", "detail")})
+        except Exception as e:
+            return {"error": str(e)[:300]}
+        if not r.get("error"):
+            r["question"] = c.homework.last.get("question")
+        return r
+
+    def hw_speak(self, text=""):
+        return bool(self._c.homework.speak(str(text or "")))
 
     def get_devices(self):
         ins, outs = AudioIO.list_devices()

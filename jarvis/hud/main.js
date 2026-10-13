@@ -719,6 +719,7 @@ window.HUD.ui = function (c) {
   if (t === 'settings' || t === 'configuration') { openSettings(open); return 'Configuration ' + (open ? 'open.' : 'closed.'); }
   if (t === 'transcript') { $('#hist').classList.toggle('show', open); return 'Transcript ' + (open ? 'shown.' : 'hidden.'); }
   if (t === 'panels') { $('#panels').style.display = open ? '' : 'none'; return 'Panels ' + (open ? 'shown.' : 'hidden.'); }
+  if (t === 'homework') { window.__hw && window.__hw.open(open); return 'Homework ' + (open ? 'open.' : 'closed.'); }
   if (t === 'core') { setMode('core'); cal.close(); return 'Back to the core.'; }
   return 'Unknown HUD part: ' + t;
 };

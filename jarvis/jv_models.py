@@ -108,7 +108,7 @@ def worked(model):
     _good = model
 
 
-def gemini_text(cfg, system, prompt, max_tokens=1500, temperature=0.2):
+def gemini_text(cfg, system, prompt, max_tokens=1500, temperature=0.2, images=None, media=None):
     """One plain Gemini text answer (no tools), trying the user's worker model first."""
     from google import genai
     from google.genai import types
@@ -120,7 +120,11 @@ def gemini_text(cfg, system, prompt, max_tokens=1500, temperature=0.2):
     for m in text_models(cfg):
         for attempt in range(3):
             try:
-                r = client.models.generate_content(model=m, contents=prompt, config=types.GenerateContentConfig(
+                contents = prompt
+                if images or media:   # pictures (JPEG bytes) and other media ((bytes, mime type)) go before the prompt
+                    contents = [types.Part.from_bytes(data=b, mime_type="image/jpeg") for b in (images or [])] + \
+                               [types.Part.from_bytes(data=b, mime_type=mt) for b, mt in (media or [])] + [prompt]
+                r = client.models.generate_content(model=m, contents=contents, config=types.GenerateContentConfig(
                     system_instruction=system, temperature=temperature, max_output_tokens=max_tokens))
                 worked(m)
                 return (r.text or "").strip()
