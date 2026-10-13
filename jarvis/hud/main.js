@@ -480,7 +480,9 @@ window.HUD = {
   on(ev) {
     switch (ev.t) {
       case 'f': setState(ev.s); scene.setLevels(ev.i, ev.o);
-        $('#s-lvl').style.width = Math.min(100, ev.i * 100) + '%'; break;
+        $('#s-lvl').style.width = Math.min(100, ev.i * 100) + '%';
+        if (setEl.classList.contains('open') && ev.v != null) { const h = $('#s-heard'); h.textContent = ev.v ? 'Mic check: hearing SPEECH' : `Mic check: background only (noise ${Math.round((ev.nf || 0) * 100)}%, ignored)`; h.style.color = ev.v ? 'var(--accent)' : 'var(--dim)'; }
+        break;
       case 'log': log(ev.who, ev.text); break;
       case 'status': toast(ev.text, 0); break;
       case 'lists': lists(ev); break;

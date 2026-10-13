@@ -943,6 +943,8 @@ class AudioIO:
     def __init__(self, cfg):
         self.cfg, self.level, self.out_level = cfg, 0.0, 0.0
         self.muted, self.on_chunk, self.speaking = False, None, False
+        self.raw_level, self.floor, self.voiced, self.voiced_at, self._vad = 0.0, 0.02, False, 0.0, None
+        threading.Thread(target=self._load_vad, daemon=True).start()
         self.tap, self.gate, self.hold = None, (lambda: True), (lambda: False)
         self.inp, self.outq, self._tail, self._reopen = None, queue.Queue(), 0.0, False
         self.error, self.bank = "", {}
@@ -1012,9 +1014,36 @@ class AudioIO:
                 pass
         self.inp = None
 
+    def _load_vad(self):
+        try:
+            import jv_auto
+            v = jv_auto.ensure("webrtcvad-wheels", "webrtcvad").Vad(3)   # 3 = most aggressive at rejecting non-speech
+            self._vad = v
+        except Exception:
+            self._vad = None
+
     def _cb(self, indata, frames, t, status):
         a = indata[:, 0].astype(np.float32) / 32768
-        self.level = min(1.0, float(np.sqrt(np.mean(a * a))) * 6)
+        a = a - float(a.mean())                       # many mics have a DC offset that reads as constant "sound"
+        raw = min(1.0, float(np.sqrt(np.mean(a * a))) * 6)
+        self.raw_level = raw
+        # adaptive noise floor: learns the room quickly when quiet, creeps up only very slowly while someone talks
+        if raw < self.floor * 1.6 + 0.015:
+            self.floor += (raw - self.floor) * 0.06
+        else:
+            self.floor += (raw - self.floor) * 0.0015
+        self.floor = max(0.002, min(0.45, self.floor))
+        self.level = min(1.0, max(0.0, raw - self.floor * 1.6 - 0.01) * 1.5)
+        speech = self.level > 0.03
+        if speech and self._vad is not None:
+            try:                                      # two 30 ms frames of 16 kHz audio; speech only if WebRTC agrees
+                pcm = indata[:, 0].tobytes()
+                speech = self._vad.is_speech(pcm[:960], IN_RATE) or self._vad.is_speech(pcm[960:1920], IN_RATE)
+            except Exception:
+                pass
+        self.voiced = speech
+        if speech:
+            self.voiced_at = time.monotonic()
         if self.muted:
             return
         if self.tap:
@@ -1544,14 +1573,14 @@ class Core:
             n += 1
             now = time.monotonic()
             if self.active:  # the follow-up window closes once he has finished and you have gone quiet
-                if self.audio.speaking or self.fish.busy or self.brain.thinking or self.brain.turn_open or getattr(self.brain, "speaking_tts", False) or self.audio.level > 0.12:
+                if self.audio.speaking or self.fish.busy or self.brain.thinking or self.brain.turn_open or getattr(self.brain, "speaking_tts", False) or time.monotonic() - self.audio.voiced_at < 0.6:
                     self.last_act = max(self.last_act, now)
                 elif now - self.last_act > FOLLOW_UP or self.audio.muted:
                     self.active = False
                     self.audio.sfx("standby")
             st = self.state()
-            lvl_in = 0.0 if self.audio.muted else self.audio.level
-            self.ui({"t": "f", "s": st, "i": round(lvl_in, 3), "o": round(self.audio.out_level, 3)})
+            lvl_in = 0.0 if self.audio.muted else self.audio.level * (1.0 if self.audio.voiced else 0.2)   # hiss barely moves the HUD
+            self.ui({"t": "f", "s": st, "i": round(lvl_in, 3), "o": round(self.audio.out_level, 3), "v": int(self.audio.voiced), "nf": round(self.audio.floor, 3)})
             if n % 20 == 0:
                 if self.timers:
                     self.ui(self.lists_payload())

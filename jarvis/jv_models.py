@@ -405,7 +405,7 @@ class ChatClient:
             raise ModelError("%s has no speech-to-text endpoint." % self.label)
         boundary = "----jarvis%d" % int(time.time() * 1000)
         parts = []
-        for k, v in (("model", self.whisper), ("response_format", "json")):
+        for k, v in (("model", self.whisper), ("response_format", "verbose_json"), ("temperature", "0")):
             parts.append(("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode())
         parts.append(("--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n" % boundary).encode()
                      + wav_bytes + b"\r\n")
@@ -413,7 +413,12 @@ class ChatClient:
         req = urllib.request.Request(self.base + "/audio/transcriptions", data=b"".join(parts), method="POST",
                                      headers={**self._headers(), "Content-Type": "multipart/form-data; boundary=" + boundary})
         with urllib.request.urlopen(req, timeout=60) as r:
-            return (json.loads(r.read().decode("utf-8")).get("text") or "").strip()
+            j = json.loads(r.read().decode("utf-8"))
+        segs = j.get("segments") or []
+        if segs:   # keep only segments the model itself believes are speech
+            keep = [s.get("text", "") for s in segs if (s.get("no_speech_prob") or 0) < 0.55 and (s.get("avg_logprob") or 0) > -1.0]
+            return " ".join(keep).strip()
+        return (j.get("text") or "").strip()
 
     def speak(self, text, voice=""):
         """OpenAI text-to-speech. Returns 24 kHz mono 16-bit PCM."""
@@ -542,8 +547,8 @@ def local_transcribe(pcm16k):
             raise ModelError("Speech recognition could not start: %s" % str(last)[:200])
     a = np.frombuffer(pcm16k, np.int16).astype(np.float32) / 32768
     try:
-        segs, _ = _whisper["model"].transcribe(a, beam_size=1, vad_filter=True)
-        return " ".join(s.text for s in segs).strip()
+        segs, _ = _whisper["model"].transcribe(a, beam_size=1, vad_filter=True, condition_on_previous_text=False)
+        return " ".join(s.text for s in segs if s.no_speech_prob < 0.55 and s.avg_logprob > -1.0).strip()
     except Exception as e:
         if _whisper.get("device") == "cuda":   # the GPU path broke mid-session: switch to the CPU and retry once
             _whisper["model"], _whisper["device"] = _whisper_load("cpu"), "cpu"
@@ -653,10 +658,8 @@ class ChatBrain:
     def _mic(self, data):
         if self.retired:
             return
-        a = np.frombuffer(data, np.int16).astype(np.float32) / 32768
-        lvl = min(1.0, float(np.sqrt(np.mean(a * a))) * 6)
-        dur = len(a) / self.IN_RATE
-        if lvl > 0.09:
+        dur = len(data) / 2 / self.IN_RATE
+        if self.audio.voiced:          # WebRTC speech detection above the learned noise floor (see AudioIO._cb)
             self._voiced += dur
             self._silence = 0.0
             if not self._seg:
@@ -668,11 +671,11 @@ class ChatBrain:
         else:
             self._pre = (self._pre + [data])[-5:]
         total = sum(len(x) for x in self._seg) / 2 / self.IN_RATE
-        if self._seg and ((self._silence > 0.85 and self._voiced > 0.3) or total > 25):
+        if self._seg and ((self._silence > 0.8 and self._voiced > 0.35) or total > 25):
             pcm, self._seg, self._pre, self._voiced, self._silence = b"".join(self._seg), [], [], 0.0, 0.0
             self.thinking = True
             self.jobs.put(("audio", pcm))
-        elif self._seg and self._silence > 1.2:  # a cough or click, not speech
+        elif self._seg and self._silence > 0.8:  # a cough or click, not speech
             self._seg, self._voiced, self._silence = [], 0.0, 0.0
 
     def _transcribe(self, pcm):
@@ -704,8 +707,10 @@ class ChatBrain:
             try:
                 if kind == "audio":
                     text = self._transcribe(payload)
-                    if not text or len(text.strip(" .,!?")) < 2:
+                    if not text or len(text.strip(" .,!?")) < 2 or is_hallucination(text):
                         self.thinking = False
+                        if text:
+                            self.app.ui({"t": "log", "who": "sys", "text": "(ignored background noise: \"%s\")" % text[:60]})
                         continue
                     self.app.post("log", "you", text)
                 else:
@@ -811,6 +816,9 @@ class ChatBrain:
                             self.app.post("log", "sys", "Provider voice failed: %s" % str(e)[:160])
                 if not pcm and mode in ("auto", "system", "provider", "kokoro"):
                     pcm = system_tts(s, self.OUT_RATE)
+                if not pcm and mode != "off" and time.time() - getattr(self, "_vwarn", 0) > 60:
+                    self._vwarn = time.time()
+                    self.app.post("log", "sys", "No voice engine could speak that reply (the text is above). Settings > Voice output > Hear it tests the voice.")
                 if pcm and gen == self.gen:
                     self.audio.play(pcm)
                     while self.audio.outq.qsize() > 8 and gen == self.gen:
@@ -1142,3 +1150,14 @@ def make_client(cfg, model=None):
     if (cfg.get("brain_provider") or "") == "auto":
         return AutoClient(cfg, model)
     return ChatClient(cfg, model=model)
+
+
+# Whisper-style models invent these when they are fed silence, hiss or music.
+_HALLU = re.compile(r"^(thanks?( you)?( (so|very) much)?( for watching| for listening)?|thank you\.?|you|bye( bye)?|okay|oh|um+|uh+|hmm+|"
+                    r"subtitles by.*|please subscribe.*|like and subscribe.*|\[?(music|silence|applause|laughter|blank_audio|no speech)\]?|"
+                    r"amara\.org.*|transcribed by.*|\.+|♪+)$", re.I)
+
+
+def is_hallucination(text):
+    t = re.sub(r"[\s.,!?'\"-]+", " ", (text or "").strip().lower()).strip()
+    return not t or bool(_HALLU.match(t)) or bool(_HALLU.match((text or "").strip()))

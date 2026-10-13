@@ -6,3 +6,4 @@ playwright
 kokoro-onnx
 faster-whisper
 uv
+webrtcvad-wheels
