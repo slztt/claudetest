@@ -199,6 +199,10 @@ function openSettings(open) {
     if (!d) return;
     fillSelect($('#s-mic'), d.inputs, S.settings.mic);
     fillSelect($('#s-spk'), d.outputs, S.settings.speaker);
+    const dv = $('#s-dev');
+    dv.textContent = d.loopback ? `Listening on: ${d.current_in} - this records your PC's sound, not a mic. Pick your real mic above.`
+      : (d.current_in ? `Listening on: ${d.current_in}. If you muted a different mic, pick that one above.` : 'Microphone not open.');
+    dv.style.color = d.loopback || !d.current_in ? 'var(--warn, #ff6b5a)' : 'var(--dim)';
   });
 }
 function loadSettings(s) {
@@ -214,7 +218,7 @@ function loadSettings(s) {
 }
 const put = (k, v) => { S.settings[k] = v; call('set_setting', k, v); };
 $('#s-key').addEventListener('change', (e) => put('api_key', e.target.value.trim()));
-$('#s-mic').addEventListener('change', (e) => put('mic', e.target.value === 'System default' ? '' : e.target.value));
+$('#s-mic').addEventListener('change', (e) => { put('mic', e.target.value === 'System default' ? '' : e.target.value); setTimeout(() => setEl.classList.contains('open') && openSettings(true), 900); });
 $('#s-spk').addEventListener('change', (e) => put('speaker', e.target.value === 'System default' ? '' : e.target.value));
 $('#s-vol').addEventListener('input', (e) => put('volume', +e.target.value));
 $('#s-wake').addEventListener('input', (e) => put('wake_threshold', +e.target.value));

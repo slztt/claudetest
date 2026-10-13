@@ -942,6 +942,9 @@ def build_sfx():
     }
 
 
+LOOPBACK_RE = re.compile(r"stereo mix|what u hear|wave out mix|loopback|cable output|voicemeeter out|virtual audio|monitor of", re.I)
+
+
 class AudioIO:
     """Owns the chosen microphone and speakers. Works even before the AI is connected."""
 
@@ -1006,6 +1009,15 @@ class AudioIO:
                                           blocksize=1024, device=dev, callback=self._cb)
                 self.inp.start()
                 self.error = "" if (dev == want) else "Chosen microphone unavailable; using the default."
+                self.in_name, self.in_loop = "", False
+                try:
+                    self.in_name = sd.query_devices(dev if dev is not None else sd.default.device[0])["name"]
+                    self.in_loop = bool(LOOPBACK_RE.search(self.in_name))
+                except Exception:
+                    pass
+                if self.in_loop:
+                    self.error = ("JARVIS is listening to '%s', which records your PC's own sound, not a microphone. "
+                                  "Pick your real mic in Settings." % self.in_name)
                 return
             except Exception as e:
                 self.error = "Microphone error: %s" % str(e)[:100]
@@ -2087,7 +2099,8 @@ class Api:
 
     def get_devices(self):
         ins, outs = AudioIO.list_devices()
-        return {"inputs": ins, "outputs": outs}
+        a = self._c.audio
+        return {"inputs": ins, "outputs": outs, "current_in": getattr(a, "in_name", ""), "loopback": getattr(a, "in_loop", False)}
 
     def set_setting(self, key, value):
         c = self._c
