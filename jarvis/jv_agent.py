@@ -58,8 +58,8 @@ class Agent:
         cfg = self.core.cfg
         if jv_models.is_live(cfg) and not cfg.get("api_key"):
             return "Background tasks need the Gemini API key."
-        if not jv_models.is_live(cfg) and jv_models.ChatClient(cfg).problem():
-            return "Background tasks need a working model: " + jv_models.ChatClient(cfg).problem()
+        if not jv_models.is_live(cfg) and jv_models.make_client(cfg).problem():
+            return "Background tasks need a working model: " + jv_models.make_client(cfg).problem()
         try:
             job = self.core.jobs.create("autopilot" if autopilot else "agent", name or goal[:70])
         except RuntimeError as e:

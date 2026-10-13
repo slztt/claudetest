@@ -323,7 +323,17 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
 <aside id="settings" role="dialog" aria-modal="false" aria-labelledby="set-h">
   <h2 id="set-h">CONFIGURATION</h2>
   <div class="lbox">
-    <b>FREE LOCAL AI · PRIVATE · NO API KEY</b>
+    <b>FREE AI · FAST AND SMART · RECOMMENDED</b>
+    <p>Two free keys, one minute: Google Gemini thinks, Groq is the instant backup and hears you. No card needed. JARVIS picks the best free models and switches if one is busy.</p>
+    <label for="fk-gem" style="margin-top:4px">Gemini key (free)</label>
+    <div style="display:flex;gap:8px"><input type="password" id="fk-gem" placeholder="paste the key here"><button class="btn" id="fk-gem-get" style="padding:8px 12px;flex:none">Get free key</button></div>
+    <label for="fk-groq">Groq key (free)</label>
+    <div style="display:flex;gap:8px"><input type="password" id="fk-groq" placeholder="paste the key here"><button class="btn" id="fk-groq-get" style="padding:8px 12px;flex:none">Get free key</button></div>
+    <button class="btn go" id="fk-use" style="margin-top:14px">Use the best free AI</button>
+    <p id="fk-msg" role="status" style="font-size:11px;color:var(--dim);margin:8px 0 0"></p>
+  </div>
+  <div class="lbox">
+    <b>OR: LOCAL AI · PRIVATE · NEEDS A STRONG GPU</b>
     <p id="la-hw">Checking this PC…</p>
     <button class="btn go" id="la-go">Set up local AI</button>
     <div class="lbar"><i id="la-bar"></i></div><p id="la-msg" role="status"></p>

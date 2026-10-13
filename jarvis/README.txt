@@ -188,3 +188,11 @@ Empty side panels hide themselves.
 
 Speech recognition now uses your NVIDIA card when its CUDA libraries are installed (JARVIS.bat repair adds them) and falls
 back to the processor automatically otherwise.
+
+JARVIS-3: THE BEST FREE BRAIN (DEFAULT)
+"Best free AI" uses two free keys and needs no card: Google Gemini (aistudio.google.com/apikey) does the thinking and
+Groq (console.groq.com/keys) is the instant backup and hears you (Whisper). JARVIS picks the newest free models each
+service offers, skips one that is busy or rate limited, and uses your local Ollama model only as the last fallback.
+The launcher asks for the keys (and opens both pages); you can also paste them in Configuration > Free AI.
+Local models now answer quickly too: no "thinking" for normal conversation (only for background work), a smaller context,
+and the model is loaded into memory at start-up. While he works, the HUD shows how long he has been thinking; Esc cancels.

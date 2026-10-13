@@ -2085,7 +2085,7 @@ class Api:
         try:
             if jv_models.is_live(cfg):
                 return {"ok": True, "models": MODELS}
-            return {"ok": True, "models": jv_models.ChatClient(cfg).list_models()[:400]}
+            return {"ok": True, "models": jv_models.make_client(cfg).list_models()[:400]}
         except Exception as e:
             return {"ok": False, "error": str(e)[:300]}
 
@@ -2095,15 +2095,21 @@ class Api:
         if jv_models.is_live(cfg):
             return {"ok": bool(self._c.brain.connected), "text": "Gemini Live is %s." % ("connected" if self._c.brain.connected else "not connected yet")}
         try:
-            cl = jv_models.ChatClient(cfg)
+            cl = jv_models.make_client(cfg)
             p = cl.problem()
             if p:
                 return {"ok": False, "text": p}
             t0 = time.time()
             text, _, _ = cl.chat("Reply with exactly: Systems online.", [{"role": "user", "content": "Status?"}], None, max_tokens=20)
-            return {"ok": True, "text": "%s replied in %.1fs: %s" % (cl.model, time.time() - t0, (text or "(empty)")[:80])}
+            return {"ok": True, "text": "%s replied in %.1fs: %s" % (getattr(cl, "active", "") or cl.model, time.time() - t0, (text or "(empty)")[:80])}
         except Exception as e:
             return {"ok": False, "text": str(e)[:300]}
+
+    def open_url(self, url):
+        if str(url).startswith("https://"):
+            webbrowser.open(str(url))
+            return True
+        return False
 
     # ---- free local AI: one-click setup ----
     def local_info(self):

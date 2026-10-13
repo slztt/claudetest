@@ -73,8 +73,16 @@ function setState(name) {
   document.body.dataset.state = name;
   hint();
 }
+let thinkT = 0, thinkTimer = null;
 function hint() {
   const h = $('#st-hint');
+  if (S.state === 'THINKING') {
+    if (!thinkTimer) { thinkT = Date.now(); thinkTimer = setInterval(hint, 1000); }
+    const s = Math.round((Date.now() - thinkT) / 1000);
+    h.textContent = s >= 2 ? `THINKING · ${s}s${s > 25 ? ' · ESC TO CANCEL' : ''}` : '';
+    return;
+  }
+  if (thinkTimer) { clearInterval(thinkTimer); thinkTimer = null; }
   if (S.state === 'STANDBY') h.textContent = S.wakeOk ? 'SAY “HEY JARVIS”' : 'CLICK THE CORE TO TALK';
   else if (S.state === 'SETUP') h.textContent = 'OPEN CONFIGURATION · ADD API KEY';
   else h.textContent = '';
@@ -201,6 +209,7 @@ function loadSettings(s) {
   $('#s-barge').checked = !!s.barge_in;
   $('#s-conf').checked = !!s.confirm_risky;
   $('#s-fish').value = s.fish_key || '';
+  $('#fk-gem').value = s.api_key || ''; $('#fk-groq').value = s.groq_key || '';
   voiceNote();
   brainFields();
   applyA11y();
@@ -268,6 +277,23 @@ $('#s-vision').addEventListener('change', (e) => put('vision_model', e.target.va
 $('#s-vision').addEventListener('keydown', (e) => e.stopPropagation());
 $('#s-kv').addEventListener('change', (e) => put('kokoro_voice', e.target.value));
 $('#s-kvt').onclick = async () => { const r = await call('test_voice', $('#s-kv').value); if (r && r !== 'ok') $('#brain-note').textContent = r; else if (!r) $('#brain-note').textContent = 'Voice preview needs the JARVIS app.'; };
+
+/* ---------- free cloud AI ---------- */
+$('#fk-gem-get').onclick = () => { call('open_url', 'https://aistudio.google.com/apikey'); $('#fk-msg').textContent = 'Sign in with Google, press Create API key, copy it and paste it here.'; };
+$('#fk-groq-get').onclick = () => { call('open_url', 'https://console.groq.com/keys'); $('#fk-msg').textContent = 'Sign in, press Create API Key, copy it and paste it here.'; };
+$('#fk-gem').addEventListener('change', (e) => { put('api_key', e.target.value.trim()); $('#s-key').value = e.target.value.trim(); });
+$('#fk-groq').addEventListener('change', (e) => put('groq_key', e.target.value.trim()));
+for (const q of ['#fk-gem', '#fk-groq']) $(q).addEventListener('keydown', (e) => e.stopPropagation());
+$('#fk-use').onclick = async () => {
+  const g = $('#fk-gem').value.trim(), q = $('#fk-groq').value.trim();
+  if (!g && !q) { $('#fk-msg').textContent = 'Paste at least one free key first.'; return; }
+  if (g !== (S.settings.api_key || '')) put('api_key', g);
+  if (q !== (S.settings.groq_key || '')) put('groq_key', q);
+  put('brain_provider', 'auto'); put('stt_mode', 'auto'); brainFields();
+  $('#fk-msg').textContent = 'Testing…';
+  const r = await call('test_brain');
+  $('#fk-msg').textContent = r ? (r.ok ? '✓ Ready: ' : '✗ ') + r.text : 'Saved. (Testing needs the JARVIS app.)';
+};
 
 /* ---------- free local AI ---------- */
 async function localInfo() {

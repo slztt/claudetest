@@ -153,7 +153,7 @@ Pip-Group 'requirements-auto.txt' 'auto1.flag' 'the power packages (automation, 
 # ---------------------------------------------------------------- 4. scan the PC and set up everything else
 $state = Join-Path $env:USERPROFILE '.jarvis\setup.json'
 $needSetup = (Has 'repair') -or -not (Test-Path $state)
-if (-not $needSetup) { try { $needSetup = -not ((Get-Content $state -Raw | ConvertFrom-Json).complete) } catch { $needSetup = $true } }
+if (-not $needSetup) { try { $st = Get-Content $state -Raw | ConvertFrom-Json; $needSetup = (-not $st.complete) -or (-not $st.v) -or ($st.v -lt 3) } catch { $needSetup = $true } }
 if ($needSetup) {
   Write-Host ""
   $local = 'ask'; if (Has 'nolocal') { $local = 'no' }

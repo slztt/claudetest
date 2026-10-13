@@ -121,6 +121,35 @@ def print_scan(i):
     say("ok", "Current brain: %s%s" % (i["brain"], " · " + i["brain_model"] if i["brain_model"] else ""))
 
 
+def read_line(prompt, timeout=240):
+    """A line of input with a timeout (empty string when nobody answers)."""
+    print("%s  ?? %s %s" % (C["b"], C["end"], prompt), end="", flush=True)
+    try:
+        if IS_WIN:
+            import msvcrt
+            end, buf = time.time() + timeout, ""
+            while time.time() < end:
+                if msvcrt.kbhit():
+                    ch = msvcrt.getwch()
+                    if ch in "\r\n":
+                        print()
+                        return buf.strip()
+                    if ch == "\b":
+                        buf = buf[:-1]
+                        print("\b \b", end="", flush=True)
+                        continue
+                    buf += ch
+                    print("*", end="", flush=True)
+                time.sleep(0.03)
+            print()
+            return ""
+        import select
+        r, _, _ = select.select([sys.stdin], [], [], timeout)
+        return sys.stdin.readline().strip() if r else ""
+    except Exception:
+        return ""
+
+
 def ask(question, default=True, timeout=25):
     """Yes/no with a default after `timeout` seconds (so an unattended setup still finishes)."""
     hint = "Y/n" if default else "y/N"
@@ -157,6 +186,38 @@ def setup(local="ask", quiet=False):
     info = scan()
     print_scan(info)
     problems = []
+
+    # 0. Free cloud AI (fast, smart, no card) -------------------------------------------------
+    cfg = load(CFG, {})
+    if not state.get("free_asked") and not (cfg.get("api_key") or cfg.get("groq_key")):
+        import webbrowser
+        print()
+        say("step", "Free AI brain (recommended: fast and smart, costs nothing)")
+        say("dim", "JARVIS uses free keys from Google Gemini (thinking) and Groq (instant backup + hearing you).")
+        say("dim", "Opening both pages: sign in, press 'Create API key', copy it, paste it here and press Enter.")
+        say("dim", "(Press Enter to skip one.)")
+        try:
+            webbrowser.open("https://aistudio.google.com/apikey")
+        except Exception:
+            pass
+        g = read_line("Gemini key: ")
+        try:
+            webbrowser.open("https://console.groq.com/keys")
+        except Exception:
+            pass
+        q = read_line("Groq key:   ")
+        state["free_asked"] = True
+        save(STATE, state)
+        if g or q:
+            cfg_set(**({"api_key": g} if g else {}), **({"groq_key": q} if q else {}), brain_provider="auto", stt_mode="auto")
+            say("ok", "Free AI brain ready (%s)" % " + ".join(x for x, k in (("Gemini", g), ("Groq", q)) if k))
+            if local == "ask" and state.get("local_ai") is None:
+                local = "no"   # a cloud brain is enough; the local AI stays optional (Configuration > Set up local AI)
+        else:
+            say("warn", "Skipped. You can add the keys any time in Configuration (cog) > Free AI.")
+    elif cfg.get("brain_provider") == "ollama" and (cfg.get("api_key") or cfg.get("groq_key")):
+        cfg_set(brain_provider="auto")    # keys exist: use the free chain, with the local model as the last fallback
+        say("ok", "Brain set to Best free AI (cloud first, your local model as backup)")
 
     # 1. Local AI -------------------------------------------------------------------------------
     have = [m for m in info["best"] if m in info["models"]]
@@ -307,10 +368,11 @@ def setup(local="ask", quiet=False):
             say("warn", "MCP scan skipped (%s)" % str(e)[:100])
 
     cfg = load(CFG, {})
-    if cfg.get("brain_provider", "gemini-live") == "gemini-live" and not cfg.get("api_key"):
-        say("warn", "No brain yet: JARVIS will open Configuration so you can add a key or press 'Set up local AI'.")
+    if not (cfg.get("api_key") or cfg.get("groq_key") or cfg.get("brain_provider") == "ollama"):
+        say("warn", "No brain yet: JARVIS will open Configuration so you can add a free key.")
     state["last_setup"] = time.strftime("%Y-%m-%d %H:%M")
     state["complete"] = not problems
+    state["v"] = 3
     save(STATE, state)
     print()
     say("ok" if not problems else "warn", "Setup finished%s." % ("" if not problems else " with warnings: " + "; ".join(problems)))

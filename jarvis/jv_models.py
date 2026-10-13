@@ -24,6 +24,7 @@ IS_MAC = platform.system() == "Darwin"
 
 # name: (label, api style, default base url, needs key, model hint, whisper model for speech input or "")
 PROVIDERS = {
+    "auto": ("Best free AI · automatic (Gemini, Groq, local)", "auto", "", False, "", ""),
     "gemini-live": ("Gemini Live · native voice", "live", "", True, "", ""),
     "anthropic": ("Anthropic · Claude", "anthropic", "https://api.anthropic.com/v1", True, "claude-sonnet-5-5", ""),
     "openai": ("OpenAI", "openai", "https://api.openai.com/v1", True, "gpt-4.1-mini", "whisper-1"),
@@ -43,7 +44,7 @@ TTS_MODES = ("auto", "fish", "kokoro", "provider", "system", "off")
 
 # Saved in config.json next to the original settings.
 MODEL_CFG = {
-    "brain_provider": "gemini-live", "brain_model": "", "brain_key": "", "brain_url": "",
+    "brain_provider": "auto", "brain_model": "", "brain_key": "", "brain_url": "", "groq_key": "", "openrouter_key": "",
     "stt_mode": "auto", "tts_mode": "auto", "tts_voice": "",
     "brain_think": "auto", "brain_ctx": 0, "tool_limit": 0, "vision_model": "", "kokoro_voice": "bm_george", "kokoro_speed": 0.95,
     # HUD / accessibility (stored here so they survive restarts; the HUD applies them)
@@ -51,7 +52,7 @@ MODEL_CFG = {
     "home_name": "", "home_lat": "", "home_lon": "",
 }
 _BOOL = {"ui_reduce_motion", "ui_contrast", "ui_captions"}
-BRAIN_KEYS = {"brain_provider", "brain_model", "brain_key", "brain_url", "brain_think", "brain_ctx", "tool_limit", "vision_model"}
+BRAIN_KEYS = {"brain_provider", "brain_model", "brain_key", "brain_url", "brain_think", "brain_ctx", "tool_limit", "vision_model", "groq_key", "openrouter_key", "api_key"}
 
 
 def coerce(key, value):
@@ -178,6 +179,8 @@ class ChatClient:
         if self.style == "ollama" and self.base.endswith("/v1"):
             self.base = self.base[:-3]
         self.thinking = ""
+        self.timeout = 300 if self.style == "ollama" else 90
+        self.deep = False       # background work (autopilot, research) may think longer; voice replies must be quick
         self.key = (cfg.get("brain_key") or "").strip() or ((cfg.get("api_key") or "").strip() if self.name == "gemini" else "")
         self.model = (model or cfg.get("brain_model") or hint or "").strip()
 
@@ -222,17 +225,17 @@ class ChatClient:
         if tools:
             body["tools"] = tool_specs(tools, "openai")
         try:
-            j = _http(self.base + "/chat/completions", body, self._headers())
+            j = _http(self.base + "/chat/completions", body, self._headers(), timeout=self.timeout)
         except ModelError as e:
             # Some models reject temperature or max_tokens (reasoning models) or tools (small local models): retry leaner.
             msg = str(e).lower()
             if "temperature" in msg or "max_tokens" in msg:
                 body.pop("temperature", None)
                 body["max_completion_tokens"] = body.pop("max_tokens", max_tokens)
-                j = _http(self.base + "/chat/completions", body, self._headers())
+                j = _http(self.base + "/chat/completions", body, self._headers(), timeout=self.timeout)
             elif tools and ("tool" in msg or "function" in msg):
                 body.pop("tools", None)
-                j = _http(self.base + "/chat/completions", body, self._headers())
+                j = _http(self.base + "/chat/completions", body, self._headers(), timeout=self.timeout)
             else:
                 raise
         ch = (j.get("choices") or [{}])[0]
@@ -260,11 +263,13 @@ class ChatClient:
         if n:
             return n
         gb = hardware().get("vram_gb") or 0
+        if not self.deep:          # conversation: enough for the prompt and ~24 tools, small enough to stay fast and in VRAM
+            return 12288 if gb >= 10 else 8192
         return 32768 if gb >= 16 else 16384 if gb >= 8 else 8192
 
     def think_value(self):
         t = str(self.cfg.get("brain_think") or "auto")
-        if t == "off":
+        if t == "off" or (t == "auto" and not self.deep):
             return False
         if self.model.startswith("gpt-oss"):
             return t if t in ("low", "medium", "high") else "medium"
@@ -287,22 +292,22 @@ class ChatClient:
             else:
                 msgs.append({"role": r, "content": str(c or "")})
         body = {"model": self.model, "messages": msgs, "stream": False, "keep_alive": "30m",
-                "options": {"num_ctx": self.ctx_size(), "temperature": temperature, "num_predict": max(max_tokens, 4096)}}
+                "options": {"num_ctx": self.ctx_size(), "temperature": temperature, "num_predict": max(max_tokens, 4096) if self.deep else min(max_tokens, 1200)}}
         th = self.think_value()
         if th is not False:
             body["think"] = th
         if tools:
             body["tools"] = tool_specs(tools, "openai")
         try:
-            j = _http(self.base + "/api/chat", body, timeout=600)
+            j = _http(self.base + "/api/chat", body, timeout=self.timeout)
         except ModelError as e:
             msg = str(e).lower()
             if "think" in msg:                      # model without a thinking mode
                 body.pop("think", None)
-                j = _http(self.base + "/api/chat", body, timeout=600)
+                j = _http(self.base + "/api/chat", body, timeout=self.timeout)
             elif tools and "tool" in msg:           # model without tool support: still answer
                 body.pop("tools", None)
-                j = _http(self.base + "/api/chat", body, timeout=600)
+                j = _http(self.base + "/api/chat", body, timeout=self.timeout)
             elif "not found" in msg:
                 raise ModelError("The model %s is not downloaded. Use 'Set up local AI' in Configuration, or run: ollama pull %s" % (self.model, self.model))
             else:
@@ -376,11 +381,11 @@ class ChatClient:
         if tools:
             body["tools"] = tool_specs(tools, "anthropic")
         try:
-            j = _http(self.base + "/messages", body, self._headers())
+            j = _http(self.base + "/messages", body, self._headers(), timeout=self.timeout)
         except ModelError as e:
             if "temperature" in str(e).lower():
                 body.pop("temperature", None)
-                j = _http(self.base + "/messages", body, self._headers())
+                j = _http(self.base + "/messages", body, self._headers(), timeout=self.timeout)
             else:
                 raise
         text, calls = "", []
@@ -574,8 +579,9 @@ class ChatBrain:
         self.speech_q = queue.Queue()
         self.speaking_tts = False
         self._seg, self._pre, self._voiced, self._silence = [], [], 0.0, 0.0
-        self.client = ChatClient(core.cfg)
+        self.client = make_client(core.cfg)
         self._check()
+        threading.Thread(target=self._warm, daemon=True).start()
         threading.Thread(target=self._worker, daemon=True).start()
         threading.Thread(target=self._voice, daemon=True).start()
         threading.Thread(target=self._attach_mic, daemon=True).start()
@@ -595,8 +601,19 @@ class ChatBrain:
             self.app.post("log", "sys", "Online · %s · %s." % (self.client.label, self.client.model))
 
     def reconnect(self):
-        self.client = ChatClient(self.app.cfg)
+        self.client = make_client(self.app.cfg)
         self._check()
+        threading.Thread(target=self._warm, daemon=True).start()
+
+    def _warm(self):
+        """Load a local model into memory now, so the first question is not slow."""
+        try:
+            for c in getattr(self.client, "members", lambda: [self.client])():
+                if c.style == "ollama" and ollama_up(c.base):
+                    _http(c.base + "/api/generate", {"model": c.model, "prompt": "", "keep_alive": "30m"}, timeout=300)
+                    break
+        except Exception:
+            pass
 
     def retire(self):
         self.retired = True
@@ -708,6 +725,8 @@ class ChatBrain:
             reply, calls, msg = self.client.chat(self.app.prompt(), self._trimmed(), decls, max_tokens=1500)
             if self.client.thinking:
                 self.app.ui({"t": "thought", "text": self.client.thinking[-1200:]})
+            if getattr(self.client, "active", None):
+                self.app.ui({"t": "brain", "label": "Free AI", "model": self.client.active})
             self.history.append(msg)
             if reply and gen == self.gen:
                 self.app.post("log", "jarvis", reply)
@@ -737,7 +756,9 @@ class ChatBrain:
         n = int(self.app.cfg.get("tool_limit") or 0)
         if n:
             return n
-        return 32 if self.client.style == "ollama" or self.client.name == "lmstudio" else 0   # small models drown in 80 tool definitions
+        if self.client.style == "auto":
+            return 28        # free tiers limit tokens per minute: send the tools that matter
+        return 24 if self.client.style == "ollama" or self.client.name == "lmstudio" else 0   # small models drown in 80 tool definitions
 
     def _trimmed(self):
         h = self.history[-self.MAX_TURNS:]
@@ -802,7 +823,8 @@ class ChatBrain:
 # Generic tool loop for the background worker (used when the brain is not Gemini).
 # ---------------------------------------------------------------------------------------------
 def run_tool_loop(cfg, system, goal, decls, call_tool, max_steps=30, should_stop=lambda: False, model=None, on_step=None):
-    client = ChatClient(cfg, model=model)
+    client = make_client(cfg, model=model)
+    client.deep = True
     p = client.problem()
     if p:
         raise ModelError(p)
@@ -1016,3 +1038,107 @@ def kokoro_pcm(core, text, rate=24000):
     k = Kokoro.get(core.voice_dir, lambda pip, mod: jv_auto.ensure(pip, mod, core), lambda t: core.post("status", t))
     core.post("status", "")
     return k.pcm(text, core.cfg.get("kokoro_voice") or "bm_george", core.cfg.get("kokoro_speed") or 0.95, rate)
+
+
+# ---------------------------------------------------------------------------------------------
+# "Best free AI": a chain of free providers. The first one that answers wins; a provider that is rate
+# limited, down or slow is skipped for a while. Models are picked automatically from what each offers.
+# ---------------------------------------------------------------------------------------------
+FREE_CHAIN = [("gemini", "api_key"), ("groq", "groq_key"), ("openrouter", "openrouter_key"), ("ollama", None)]
+FREE_PREFS = {
+    "groq": ["openai/gpt-oss-120b", "moonshotai/kimi-k2-instruct-0905", "moonshotai/kimi-k2-instruct", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"],
+    "openrouter": ["openai/gpt-oss-120b:free", "deepseek/deepseek-chat-v3.1:free", "qwen/qwen3-coder:free", "meta-llama/llama-3.3-70b-instruct:free", "z-ai/glm-4.5-air:free"],
+}
+_PICKED, _COOL = {}, {}
+
+
+def _pick_model(client, prov):
+    if prov in _PICKED and time.time() - _PICKED[prov][1] < 6 * 3600:
+        return _PICKED[prov][0]
+    choice = ""
+    try:
+        have = client.list_models()
+    except Exception:
+        have = []
+    if prov == "gemini":
+        def ver(m):
+            v = re.match(r"gemini-(\d+(?:\.\d+)?)-flash(?:-preview)?(?:-\d\d-\d{4})?$", m)
+            return float(v.group(1)) if v else -1
+        cands = sorted([m for m in have if ver(m) > 0], key=lambda m: (ver(m), "preview" not in m), reverse=True)
+        choice = cands[0] if cands else ("gemini-flash-latest" if "gemini-flash-latest" in have else "gemini-2.5-flash")
+    elif prov == "ollama":
+        best = [m for m in recommend()["models"] if m in have]
+        choice = best[0] if best else next((m for m in have if not re.search(r"vl|vision|embed|gemma3:4b", m)), "")
+    else:
+        choice = next((m for m in FREE_PREFS[prov] if m in have), FREE_PREFS[prov][0] if not have else next((m for m in have if m.endswith(":free") or prov == "groq"), FREE_PREFS[prov][0]))
+    if choice:
+        _PICKED[prov] = (choice, time.time())
+    return choice
+
+
+class AutoClient:
+    name, label, style, needs_key = "auto", "Best free AI", "auto", False
+
+    def __init__(self, cfg, model=None):
+        self.cfg, self.thinking, self.active, self.deep, self.timeout = cfg, "", "", False, 90
+        g = cfg.get("groq_key")
+        self.whisper = "whisper-large-v3-turbo" if g else ""   # Groq also transcribes speech, free and fast
+        self._groq = ChatClient({**cfg, "brain_provider": "groq", "brain_key": g, "brain_url": "", "brain_model": "x"}) if g else None
+        self.model = "automatic"
+
+    def members(self):
+        out = []
+        for prov, key in FREE_CHAIN:
+            k = (self.cfg.get(key) or "").strip() if key else ""
+            if key and not k:
+                continue
+            if prov == "ollama" and not ollama_up():
+                continue
+            c = ChatClient({**self.cfg, "brain_provider": prov, "brain_key": k, "brain_url": "", "brain_model": "",
+                            "brain_think": self.cfg.get("brain_think", "auto")})
+            c.model = (self.cfg.get("brain_model") if prov == "ollama" and self.cfg.get("brain_model") else "") or _pick_model(c, prov)
+            c.timeout = 60 if prov != "ollama" else 240
+            if c.model:
+                out.append(c)
+        return out
+
+    def problem(self):
+        if any((self.cfg.get(k) or "").strip() for _, k in FREE_CHAIN if k) or ollama_up():
+            return ""
+        return "Add a free Groq or Gemini key in Configuration (the Get free key buttons open the pages), or set up the local AI."
+
+    def list_models(self):
+        return ["%s: %s" % (c.name, c.model) for c in self.members()]
+
+    def chat(self, system, messages, tools, max_tokens=1200, temperature=0.4):
+        last = None
+        for c in self.members():
+            if time.time() < _COOL.get(c.name, 0):
+                continue
+            c.deep = self.deep
+            try:
+                text, calls, msg = c.chat(system, messages, tools, max_tokens, temperature)
+                self.thinking, self.active = c.thinking, "%s · %s" % (c.name, c.model)
+                return text, calls, msg
+            except ModelError as e:
+                last = e
+                m = str(e).lower()
+                if "401" in m or "invalid" in m and "key" in m:
+                    _COOL[c.name] = time.time() + 3600           # bad key: stop trying it for an hour
+                else:
+                    _COOL[c.name] = time.time() + (90 if ("429" in m or "rate" in m or "quota" in m) else 30)
+        raise last or ModelError(self.problem() or "Every free provider is busy right now; try again in a minute.")
+
+    def transcribe(self, wav):
+        if not self._groq:
+            raise ModelError("No Groq key for speech recognition.")
+        return self._groq.transcribe(wav)
+
+    def describe_image(self, b64, question=""):
+        return ""
+
+
+def make_client(cfg, model=None):
+    if (cfg.get("brain_provider") or "") == "auto":
+        return AutoClient(cfg, model)
+    return ChatClient(cfg, model=model)
