@@ -1,5 +1,6 @@
 import { createScene } from './scene.js';
 import { GROUPS } from './globe.js';
+import { createCalendar } from './calendar.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -319,10 +320,12 @@ window.addEventListener('keydown', (e) => {
   const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
   if (e.key === 'Escape' && document.activeElement !== cmd) {
     if (setEl.classList.contains('open')) openSettings(false);
+    else if (cal.isOpen) cal.close();
     else if (scene.mode === 'globe' && globe.satView) { globe.satView = false; }
     else if (scene.mode === 'globe' && globe.selected) { globe.select(null); }
     else call('stop');
   }
+  else if (!typing && (e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey) { e.preventDefault(); cal.toggle(); }
   else if (!typing && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); setMode(scene.mode === 'globe' ? 'core' : 'globe'); }
   else if (!typing && scene.mode === 'globe' && globeKey(e)) e.preventDefault();
   else if (e.key === 'F11') { e.preventDefault(); call('fullscreen'); }
@@ -380,6 +383,8 @@ window.HUD = {
       case 'pulse': scene.pulse(0.6); break;
       case 'approval': showApproval(ev); break;
       case 'brain': setBrain(ev); break;
+      case 'calendar': if (ev.close) cal.close(); else cal.open(ev.date, ev.view); break;
+      case 'calendar_changed': cal.refresh(); break;
       case 'auto': setAuto(ev.on); break;
       case 'approval_clear': pending = null; $('#approve').classList.remove('show'); break;
       case 'wake_status': S.wakeOk = ev.ok; S.wakeErr = ev.err || ''; hint();
@@ -433,6 +438,11 @@ function demo() {
     settings: { api_key: '', volume: 1, wake_threshold: 0.5, barge_in: false, confirm_risky: true, fish_key: '', mic: '', speaker: '', brain_provider: 'gemini-live', stt_mode: 'auto', tts_mode: 'auto', ui_scale: 1, ui_captions: true },
     lists: { tasks: ['Renew passport', 'Book dentist'], notes: ['Wi-Fi password is on the fridge'], contacts: [['Mum', '07700 900123']], timers: [{ label: 'Tea', left: 142 }] } };
 }
+
+/* ---------- calendar ---------- */
+const cal = createCalendar({ call, hasBridge: () => !!api(), esc, act, toast, say, onOpen: (on) => { $('#b-cal').classList.toggle('on', on); $('#b-cal').setAttribute('aria-pressed', String(on)); } });
+$('#b-cal').onclick = () => cal.toggle();
+window.__cal = cal;
 
 /* =====================================================================================
    Holographic Earth: mode switch, panel, labels, keyboard, and the `hologram` tool

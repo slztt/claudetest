@@ -302,6 +302,7 @@ body.globe #gl{cursor:grab}body.globe.dragging #gl{cursor:grabbing}
   <input id="cmd" type="text" autocomplete="off" spellcheck="false" aria-label="Command" placeholder="Say “Hey JARVIS” or type a command">
   <button class="ib" id="b-mic" aria-label="Mute microphone" title="Microphone"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
   <button class="ib" id="b-stop" aria-label="Stop speaking" title="Stop speaking (Esc)"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+  <button class="ib" id="b-cal" aria-label="Calendar" aria-pressed="false" title="Calendar (C)"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4M7.5 14h2M11 14h2M14.5 14h2M7.5 17h2M11 17h2"/></svg></button>
   <button class="ib" id="b-log" aria-label="Show transcript" title="Transcript"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
   <button class="ib" id="b-set" aria-label="Configuration" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></button>
 </div>
@@ -347,7 +348,7 @@ body.globe #gl{cursor:grab}body.globe.dragging #gl{cursor:grabbing}
   <div class="sw"><div>Captions<small>Show what you and JARVIS say on screen</small></div><input type="checkbox" id="s-caps" aria-label="Captions"></div>
   <label for="s-scale">Text and panel size</label>
   <input type="range" id="s-scale" min="0.8" max="1.6" step="0.05">
-  <p class="gnote" style="text-align:left">Keyboard: / or T to type, G Earth, arrows rotate, + and − zoom, [ and ] step through satellites, V satellite view, Esc back. Every 3D readout is mirrored as text for screen readers.</p>
+  <p class="gnote" style="text-align:left">Keyboard: / or T to type, C calendar (inside it: arrows, PageUp/PageDown, D W M A Y views, N new event), G Earth, arrows rotate, + and − zoom, [ and ] step through satellites, V satellite view, Esc back. Every 3D readout is mirrored as text for screen readers.</p>
   <div class="brow"><button class="btn go" id="s-test">Test audio</button><button class="btn" id="s-done">Close</button></div>
   <p id="hint-wake"></p>
 </aside>

@@ -31,12 +31,23 @@ PLUS_TOOLS = [
        "returns everything connected to a term. Store what the user tells you and clearly wants kept; recall before personalising advice.",
        {"action": (S_, "remember, recall, forget, graph_add or graph_query"), "text": (S_, "Fact to remember, or search/forget words, or the graph term"),
         "category": (S_, "remember: category"), "relation": (S_, "graph_add: relation, e.g. works_at"), "object": (S_, "graph_add: the object")}, ["action", "text"]),
-    _t("calendar", "The user's calendar, kept locally. add (title, start 'YYYY-MM-DD HH:MM', duration_min, remind_min) warns about clashes; list shows the next days; "
-       "move and cancel use the event id; free finds open slots on a day; export writes an .ics file. Reminders are spoken automatically. Act on the calendar yourself "
-       "when asked: resolve clashes by proposing a move, then do it once the user agrees.",
-       {"action": (S_, "add, list, move, cancel, free or export"), "title": (S_, "Event title (add)"), "start": (S_, "Start 'YYYY-MM-DD HH:MM' (add, move) or the day for free"),
-        "duration_min": (N_, "Minutes (add, free), default 60"), "remind_min": (N_, "Minutes before to remind (add)"), "id": (S_, "Event id (move, cancel)"),
-        "days": (N_, "Days ahead for list, default 7"), "notes": (S_, "Notes (add)")}, ["action"]),
+    _t("calendar", "The user's calendar (local, with recurring events, holidays, weather, reminders and a holographic month/week/day/agenda/year view). "
+       "quick_add takes plain English in text, e.g. 'Lunch with Sam Friday 1pm for 90 min at Nando's every week remind me 15 min before', and is usually best. "
+       "add takes explicit fields. list (next N days), agenda (one day, with holidays and forecast), search (text), edit / move / cancel by id "
+       "(cancel scope one|following|series with date for a single occurrence of a repeating event), free (open slots on a day within working hours), "
+       "find_time (first free slots of duration_min over the next days), countdown (to the next event matching text), stats (this week), holidays, "
+       "export (.ics), import (path to an .ics file). show opens the calendar on screen at start (a date or words like 'March' / 'next week') "
+       "in view month|week|day|agenda|year; close hides it. Clashes are reported: propose a move, and do it once the user agrees.",
+       {"action": (S_, "quick_add, add, list, agenda, search, edit, move, cancel, free, find_time, countdown, stats, holidays, export, import, show or close"),
+        "text": (S_, "quick_add: the event in plain English; search / countdown: words to match; import: file path"),
+        "title": (S_, "Event title (add, edit)"), "start": (S_, "'YYYY-MM-DD HH:MM' (add, edit, move), a day (agenda, free, find_time, show)"),
+        "duration_min": (N_, "Minutes (add, edit, free, find_time), default 60"), "all_day": (B_, "All-day event (add, edit)"),
+        "repeat": (S_, "add/edit: none, daily, weekdays, weekly, monthly or yearly"), "until": (S_, "add/edit: last date of a repeating event 'YYYY-MM-DD'"),
+        "remind_min": (N_, "Minutes before to remind; -1 for none"), "location": (S_, "Where (add, edit)"), "notes": (S_, "Notes (add, edit)"),
+        "cat": (S_, "Category: work, personal, health, social, travel, birthday, focus or other"),
+        "id": (S_, "Event id, e.g. E12 (edit, move, cancel)"), "scope": (S_, "cancel: series (default), one or following"),
+        "date": (S_, "cancel one/following: the occurrence date 'YYYY-MM-DD'"), "days": (N_, "Days ahead for list / find_time, default 7 / 14"),
+        "view": (S_, "show: month, week, day, agenda or year")}, ["action"]),
     _t("inbox", "Read-only look at the user's email over IMAP (an app password saved in Settings): check lists unread messages, read shows one, draft_reply saves a reply draft "
        "you wrote into the Drafts folder on this PC (it is never sent by this tool; use send_message to send once the user approves the wording).",
        {"action": (S_, "check, read or draft_reply"), "id": (S_, "Message id from check"), "text": (S_, "draft_reply: the reply text"), "limit": (N_, "check: how many, default 8")}, ["action"]),
@@ -191,82 +202,10 @@ class Plus:
         return _jload(self.f("calendar.json"), [])
 
     def t_calendar(self, a):
-        act, ev = str(a.get("action") or "").lower(), None
-        with self.lock:
-            events = self._events()
-            try:
-                if act == "add":
-                    start = parse_dt(a.get("start"))
-                    dur = int(a.get("duration_min") or 60)
-                    end = start + dt.timedelta(minutes=dur)
-                    title = str(a.get("title") or "").strip()
-                    if not title:
-                        return "An event needs a title."
-                    clash = [e for e in events if parse_dt(e["start"]) < end and parse_dt(e["end"]) > start]
-                    n = max([int(e["id"][1:]) for e in events] + [0]) + 1
-                    ev = {"id": "E%d" % n, "title": title[:100], "start": start.strftime("%Y-%m-%d %H:%M"), "end": end.strftime("%Y-%m-%d %H:%M"),
-                          "remind": int(a.get("remind_min") if a.get("remind_min") is not None else self.core.cfg.get("remind_default", 10)), "notes": str(a.get("notes") or "")[:200]}
-                    events.append(ev)
-                    _jsave(self.f("calendar.json"), events)
-                    msg = "Added %s: %s at %s for %d minutes." % (ev["id"], ev["title"], ev["start"], dur)
-                    if clash:
-                        msg += " WARNING, this clashes with: " + "; ".join("%s %s (%s)" % (c["id"], c["title"], c["start"]) for c in clash) + ". Offer to move one."
-                    return msg
-                if act == "list":
-                    now, days = dt.datetime.now(), int(a.get("days") or 7)
-                    rows = sorted([e for e in events if now - dt.timedelta(hours=1) <= parse_dt(e["end"]) <= now + dt.timedelta(days=days)], key=lambda e: e["start"])
-                    return "\n".join("%s  %s - %s  %s%s" % (e["id"], e["start"], e["end"][11:], e["title"], (" (" + e["notes"] + ")") if e["notes"] else "") for e in rows) or "Nothing scheduled."
-                if act in ("move", "cancel"):
-                    e = next((x for x in events if x["id"].lower() == str(a.get("id") or "").lower()), None)
-                    if not e:
-                        return "No event with that id. Use list to see ids."
-                    if act == "cancel":
-                        events.remove(e)
-                        _jsave(self.f("calendar.json"), events)
-                        return "Cancelled %s: %s." % (e["id"], e["title"])
-                    dur = parse_dt(e["end"]) - parse_dt(e["start"])
-                    s = parse_dt(a.get("start"))
-                    e["start"], e["end"] = s.strftime("%Y-%m-%d %H:%M"), (s + dur).strftime("%Y-%m-%d %H:%M")
-                    self.reminded.discard(e["id"])
-                    _jsave(self.f("calendar.json"), events)
-                    return "Moved %s to %s." % (e["id"], e["start"])
-                if act == "free":
-                    day = parse_dt(a.get("start") or dt.date.today().isoformat()).replace(hour=0, minute=0)
-                    need = dt.timedelta(minutes=int(a.get("duration_min") or 60))
-                    busy = sorted((parse_dt(e["start"]), parse_dt(e["end"])) for e in events if parse_dt(e["start"]).date() == day.date())
-                    cur, slots, stop = day.replace(hour=9), [], day.replace(hour=18)
-                    for s, e in busy + [(stop, stop)]:
-                        if s - cur >= need:
-                            slots.append("%s-%s" % (cur.strftime("%H:%M"), s.strftime("%H:%M")))
-                        cur = max(cur, e)
-                    return ("Free on %s (09:00-18:00): " % day.date() + ", ".join(slots)) if slots else "No free slot that long on %s." % day.date()
-                if act == "export":
-                    out = self.dir / "calendar.ics"
-                    z = lambda s: parse_dt(s).strftime("%Y%m%dT%H%M%S")
-                    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//JARVIS//EN"]
-                    for e in events:
-                        lines += ["BEGIN:VEVENT", "UID:%s@jarvis" % e["id"], "DTSTART:" + z(e["start"]), "DTEND:" + z(e["end"]), "SUMMARY:" + e["title"], "END:VEVENT"]
-                    out.write_text("\r\n".join(lines + ["END:VCALENDAR"]) + "\r\n", encoding="utf-8")
-                    return "Exported %d events to %s (import it into Google Calendar or Outlook)." % (len(events), out)
-            except ValueError as e:
-                return "Calendar error: %s" % e
-        return "Use add, list, move, cancel, free or export."
+        return self.core.cal.tool(a)  # JARVIS-3: see jv_calendar.py
 
     def _reminders(self):
-        while True:
-            time.sleep(30)
-            try:
-                now = dt.datetime.now()
-                for e in self._events():
-                    s = parse_dt(e["start"])
-                    key = e["id"] + e["start"]
-                    if key not in self.reminded and s - dt.timedelta(minutes=e.get("remind", 10)) <= now < s + dt.timedelta(minutes=2):
-                        self.reminded.add(key)
-                        self.core.audio.sfx("alarm")
-                        self.core.activate()
-                        self.core.brain.say_to_jarvis("[System] Calendar reminder: '%s' starts at %s (in about %d minutes). Tell the user briefly." % (e["title"], s.strftime("%H:%M"), max(0, int((s - now).total_seconds() // 60))))
-            except Exception:
-                pass
+        return  # JARVIS-3: reminders moved to jv_calendar (they understand repeating events)
 
     # ---- inbox ------------------------------------------------------------------------------------------------
     def _imap(self):

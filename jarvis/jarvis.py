@@ -16,6 +16,7 @@ import webview
 
 import jv_core
 import jv_models
+import jv_calendar
 from jv_tools import NEW_TOOLS
 from jv_plus import PLUS_TOOLS
 
@@ -1418,6 +1419,9 @@ class Core:
         self.wake = WakeWord(self)
         self.audio.tap, self.audio.gate = self.wake.feed, (lambda: self.active)
         jv_core.attach(self, HERE, DATA, resolve_path, is_risky, is_hard, TOOLS)  # JARVIS-2: skills, jobs, scripts, background agent
+        for k, v in jv_calendar.CAL_CFG.items():
+            self.cfg.setdefault(k, v)
+        self.cal = jv_calendar.Calendar(self, DATA / "personal")              # JARVIS-3: calendar engine + holographic views
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._stats_loop, daemon=True).start()
 
@@ -1862,6 +1866,21 @@ class Api:
 
     def set_setting(self, key, value):
         c = self._c
+        if key in jv_calendar.CAL_CFG:
+            if key == "week_start":
+                value = 6 if str(value) in ("6", "sunday") else 0
+            elif key == "cal_weather":
+                value = value in (True, "true", 1, "1")
+            elif key in ("work_start", "work_end"):
+                if not re.match(r"^\d{1,2}:\d{2}$", str(value)):
+                    return
+                value = "%02d:%s" % (int(str(value).split(":")[0]), str(value).split(":")[1])
+            else:
+                value = re.sub(r"[^A-Za-z]", "", str(value))[:2].upper()
+            c.cfg[key] = value
+            save_json(CFG_FILE, c.cfg)
+            c.ui({"t": "calendar_changed"})
+            return
         if key in jv_models.MODEL_CFG:
             try:
                 value = jv_models.coerce(key, value)
@@ -1939,6 +1958,44 @@ class Api:
             return {"ok": True, "text": "%s replied in %.1fs: %s" % (cl.model, time.time() - t0, (text or "(empty)")[:80])}
         except Exception as e:
             return {"ok": False, "text": str(e)[:300]}
+
+    # ---- calendar UI ----
+    def cal_range(self, start, end):
+        try:
+            return self._c.cal.range_payload(str(start)[:10], str(end)[:10])
+        except Exception as e:
+            return {"error": str(e)[:200]}
+
+    def cal_save(self, ev):
+        """Create (no id) or update an event from the calendar UI."""
+        cal, ev = self._c.cal, dict(ev or {})
+        try:
+            if ev.get("id"):
+                e = cal.edit(ev["id"], ev)
+                return {"ok": bool(e), "event": e}
+            e, clash = cal.add(ev)
+            if not e:
+                return {"ok": False, "error": clash}
+            return {"ok": True, "event": e, "clash": [c["title"] for c in clash]}
+        except ValueError as x:
+            return {"ok": False, "error": str(x)}
+
+    def cal_quick(self, text):
+        try:
+            d = jv_calendar.parse_quick(str(text), week_start=int(self._c.cfg.get("week_start") or 0))
+        except ValueError as x:
+            return {"ok": False, "error": str(x)}
+        e, clash = self._c.cal.add(d)
+        return {"ok": bool(e), "event": e, "clash": [c["title"] for c in clash or []]}
+
+    def cal_delete(self, eid, scope="series", date=""):
+        return {"ok": bool(self._c.cal.delete(str(eid), str(scope), str(date)))}
+
+    def cal_export(self):
+        return self._c.cal.t_export({})
+
+    def cal_import(self, path):
+        return self._c.cal.t_import({"path": path})
 
     # ---- hologram data ----
     TLE_GROUPS = {"stations": "stations", "brightest": "visual", "gps": "gps-ops", "weather": "weather",
