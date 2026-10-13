@@ -28,4 +28,4 @@ Voice-first desktop assistant with a holographic HUD, unpacked from `JARVIS-2 (1
 - **Calendar**: month/week/day/agenda/year holographic views with recurring events and natural-language add (`jarvis/jv_calendar.py`, `jarvis/hud/calendar.js`).
 - **Generated holograms**: JARVIS designs objects from parts or loads .glb/.obj/.stl files (`jarvis/hud/holo.js`).
 
-`JARVIS-3.zip` is the ready-to-run package. See `jarvis/README.txt` for setup.
+**Install:** download [`JARVIS.bat`](JARVIS.bat) and double-click it. It downloads JARVIS, installs Python and every package, sets up the free local AI, voice and speech, creates the Start menu / desktop app and launches it. (Or unzip `JARVIS-3.zip` and run `JARVIS.bat` inside; Mac/Linux: `./start.sh`.) See `jarvis/README.txt`.

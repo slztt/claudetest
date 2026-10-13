@@ -2,15 +2,22 @@ J.A.R.V.I.S.
 A voice-first assistant with a holographic HUD that can operate your PC.
 JARVIS-3: works with almost any AI model, a 3D wireframe hologram interface and a holographic Earth with live satellites.
 
-INSTALL (Windows)
-1. Nothing to install by hand: the installer finds a 64-bit Python 3.11-3.13 or installs Python 3.12 for you
-   (the newest Python versions and 32-bit Python lack packages JARVIS needs).
-2. Get a free Gemini API key: https://aistudio.google.com/apikey
-3. Double-click "Install JARVIS.bat". It sets everything up and adds JARVIS to your Start menu
-   and Desktop. (Or just double-click "Start JARVIS.bat" to run without shortcuts.)
-   Mac/Linux: run ./start.sh   (Linux also needs: sudo apt install libportaudio2)
-4. First launch needs internet: it installs packages, downloads the wake-word model and loads the
-   3D engine. Click the cog (bottom right), paste your API key, pick your mic and speakers, press Close.
+INSTALL: ONE FILE
+Windows: double-click JARVIS.bat. That is all. It works on its own too (download just that file and run it).
+It scans the PC and sets up everything that is missing, then launches JARVIS:
+  1. finds JARVIS next to it, or downloads it from GitHub into %LOCALAPPDATA%\JARVIS\app
+  2. finds a 64-bit Python 3.11-3.13, or installs Python 3.12 for you (winget, else python.org)
+  3. builds JARVIS's own environment and installs every package (core, wake word, automation, voice, speech)
+  4. scans your graphics card and asks once whether to install the FREE local AI (Ollama + the best model for
+     your GPU + a vision model); answers itself after 25 seconds if you walk away
+  5. downloads the free British voice and local speech recognition, a browser for automation if you have none,
+     and connects MCP servers it finds (Claude Desktop config, Blender, Node-based thinking tools)
+  6. makes the app: Start menu + desktop "JARVIS" with its icon, plus "JARVIS Setup and Repair" and "JARVIS Update";
+     asks once whether JARVIS should start with Windows
+  7. starts the local AI engine if needed and launches JARVIS (first run opens Configuration if no brain is set)
+Later runs take a second: a health check, then launch. Options: JARVIS.bat repair | update | nolocal | nolaunch.
+Mac/Linux: ./start.sh does the same (Linux also needs: sudo apt install libportaudio2).
+Want a cloud brain instead? Paste a Gemini key (aistudio.google.com/apikey) or any provider's key in Configuration.
 
 THE FILM VOICE (Fish Audio)
 - JARVIS speaks with the "Jarvis (MCU) J.A.R.V.I.S" voice from Fish Audio:

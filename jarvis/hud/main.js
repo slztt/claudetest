@@ -477,6 +477,7 @@ async function boot(initial) {
     fillProviders(initial.providers); S.settings = initial.settings || {};
     loadSettings(initial.settings); lists(initial.lists); setState(initial.state); setTheme((initial.settings || {}).theme);
     setBrain(initial.brain);
+    if (initial.state === 'SETUP') setTimeout(() => openSettings(true), 1200);   // first run: go straight to choosing a brain
     const st = initial.settings || {};
     if (st.home_lat !== '' && st.home_lat != null && st.home_lon !== '' && st.home_lon != null) globe.setPin('home', { name: st.home_name || 'Home', lat: +st.home_lat, lon: +st.home_lon });
   }
