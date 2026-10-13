@@ -401,10 +401,10 @@ window.HUD = {
 };
 
 /* ---------- boot sequence ---------- */
-const BOOT = ['CORE REACTOR ............ ONLINE', 'NEURAL LINK ............. ESTABLISHED', 'AUDIO CORTEX ............ CALIBRATED', 'WAKE WORD ENGINE ........ ARMED', 'SYSTEM CONTROL .......... AUTHORISED', 'ALL SYSTEMS NOMINAL'];
+const BOOT = ['ARC REACTOR ............. 3.0 GJ/s', 'CORE REACTOR ............ ONLINE', 'NEURAL LINK ............. ESTABLISHED', 'AUDIO CORTEX ............ CALIBRATED', 'WAKE WORD ENGINE ........ ARMED', 'HOLOGRAPHIC PROJECTOR ... ALIGNED', 'ORBITAL TRACKING ........ SYNCHRONISED', 'TELEMETRY GRID .......... STREAMING', 'SYSTEM CONTROL .......... AUTHORISED', 'ALL SYSTEMS NOMINAL'];
 async function boot(initial) {
   const pre = $('#boot-log');
-  BOOT.forEach((l, i) => { const s = document.createElement('span'); s.textContent = l; s.style.animationDelay = (0.5 + i * 0.28) + 's'; pre.appendChild(s); });
+  BOOT.forEach((l, i) => { const s = document.createElement('span'); s.textContent = l; s.style.animationDelay = (0.4 + i * 0.19) + 's'; pre.appendChild(s); });
   await new Promise((r) => setTimeout(r, document.body.classList.contains('calm') || mqCalm.matches ? 600 : 2500));
   $('#boot').classList.add('gone');
   document.body.classList.add('ready');
