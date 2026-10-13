@@ -1325,6 +1325,10 @@ class FishVoice:
                     self.core.audio.play(chunk)
 
 
+class NoAnswer(Exception):
+    pass
+
+
 class Brain:
     """Gemini Live session on its own thread: streams mic audio up while awake, plays voice replies."""
 
@@ -1335,6 +1339,9 @@ class Brain:
         self.turn_open, self.interrupted, self.q, self._work = False, False, None, None
         self.mi, self.retired = 0, False
         self.handle, self.resuming, self.announced = None, False, False   # Live API session resumption
+        # safe levels, used when Google refuses or ignores a session: 0 everything, 1 without resumption/compression,
+        # 2 the original small tool set (what the first JARVIS sent, known to work)
+        self.safe, self.heard_at, self.reply_at, self.tool_busy = 0, 0.0, 0.0, False
         threading.Thread(target=self._run, daemon=True).start()
 
     @property
@@ -1356,7 +1363,12 @@ class Brain:
 
     def _config(self):
         extra = {}
+        tools = TOOLS + NEW_TOOLS + PLUS_TOOLS
+        if self.safe < 2:
+            tools = tools + getattr(self.app, "extra_decls", lambda live=True: AUTO_TOOLS + POWER_TOOLS)(True)
         try:
+            if self.safe >= 1:
+                raise RuntimeError("safe mode")
             # Without these a Live session ends after ~15 minutes of audio (~2 with video) and forgets everything on reconnect.
             extra["context_window_compression"] = types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow())
             extra["session_resumption"] = types.SessionResumptionConfig(handle=self.handle)
@@ -1364,7 +1376,7 @@ class Brain:
             pass
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"], output_audio_transcription={}, input_audio_transcription={},
-            system_instruction=self.app.prompt(), tools=[{"function_declarations": TOOLS + NEW_TOOLS + PLUS_TOOLS + getattr(self.app, "extra_decls", lambda live=True: AUTO_TOOLS + POWER_TOOLS)(True)}],
+            system_instruction=self.app.prompt(), tools=[{"function_declarations": tools}],
             speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE))), **extra)
 
@@ -1375,19 +1387,21 @@ class Brain:
                 self.app.post("status", "Open Configuration and add your Gemini API key.")
                 await asyncio.sleep(1)
                 continue
-            ts, ok = [], False
+            ts, ok, since = [], False, 0.0
             try:
                 self.app.post("status", "")
                 client = genai.Client(api_key=self.app.cfg["api_key"], http_options={"api_version": "v1beta"})
                 async with client.aio.live.connect(model=MODELS[self.mi % len(MODELS)], config=self._config()) as sess:
-                    self.session, self.connected, delay, ok = sess, True, 3, True
+                    self.session, self.connected, delay, ok, since = sess, True, 3, True, time.monotonic()
+                    self.heard_at = self.reply_at = 0.0
                     self.q, self.interrupted, self.turn_open = asyncio.Queue(maxsize=100), False, False
                     self.audio.on_chunk = self._mic
                     self.app.post("status", "")
                     if not self.announced:
-                        self.app.post("log", "sys", "Online.")
+                        self.app.post("log", "sys", "Online (%s%s)." % (MODELS[self.mi % len(MODELS)].split("/")[-1],
+                                                                        ["", ", safe mode", ", basic tools only"][self.safe]))
                         self.announced = True
-                    ts = [asyncio.ensure_future(self._send()), asyncio.ensure_future(self._recv())]
+                    ts = [asyncio.ensure_future(self._send()), asyncio.ensure_future(self._recv()), asyncio.ensure_future(self._watch())]
                     self._work = asyncio.gather(*ts)
                     await self._work
             except asyncio.CancelledError:
@@ -1399,13 +1413,22 @@ class Brain:
                     self.app.post("log", "sys", "Reconnecting with new settings...")
                 self.resuming = False
             except Exception as e:
-                if self.handle:                  # a stale resumption handle can be refused: forget it and retry at once
+                if self.handle and not isinstance(e, NoAnswer):   # a stale resumption handle can be refused: forget it and retry at once
                     self.handle, delay = None, 0.5
                     continue
-                self.app.post("log", "sys", "Connection failed (%s): %s" % (type(e).__name__, str(e)[:300]))
-                if not ok:
-                    self.mi += 1
+                self.app.post("log", "sys", "Connection problem (%s): %s" % (type(e).__name__, str(e)[:300]))
+                if not ok or isinstance(e, NoAnswer) or time.monotonic() - since < 20:
                     note = await self.loop.run_in_executor(None, diagnose, self.app.cfg["api_key"])
+                    if note.startswith("Your internet and API key are fine"):
+                        # Google is reachable and the key works, so it is this session's setup: simplify it, then try the next model
+                        self.handle, self.announced = None, False
+                        if self.safe < 2:
+                            self.safe += 1
+                            note = "Gemini refused the full setup; retrying in a simpler mode (%d of 2)." % self.safe
+                        else:
+                            self.safe, self.mi = 0, self.mi + 1
+                            note = "Gemini still refused; trying another voice model (%s)." % MODELS[self.mi % len(MODELS)].split("/")[-1]
+                        delay = 1
                     self.app.post("log", "sys", note)
                     self.app.post("status", note)
                 self.app.post("log", "sys", "Retrying in %ss." % int(delay))
@@ -1417,6 +1440,14 @@ class Brain:
                     self.audio.on_chunk = None
             await asyncio.sleep(delay)
             delay = min(delay * 2, 60)
+
+    async def _watch(self):
+        """Catch a session that is open but dead: you were heard and nothing came back."""
+        while True:
+            await asyncio.sleep(1)
+            if self.heard_at and self.reply_at < self.heard_at and not self.tool_busy and time.monotonic() - self.heard_at > 15:
+                self.heard_at = 0.0
+                raise NoAnswer("Gemini heard you but did not answer for 15 seconds")
 
     def _mic(self, data):
         self.loop.call_soon_threadsafe(self._put, data)
@@ -1446,6 +1477,8 @@ class Brain:
                 if getattr(r, "go_away", None) is not None and self.handle and not self.turn_open:
                     self.resuming = True         # the server will close this connection soon: move to a new one now, keeping the conversation
                     self.reconnect()
+                if r.data or r.tool_call or (r.server_content and r.server_content.output_transcription):
+                    self.reply_at = time.monotonic()
                 if r.data:
                     self.thinking, self.turn_open = False, True
                     if not self.interrupted and not fish.enabled:
@@ -1458,6 +1491,8 @@ class Brain:
                         self.interrupted = False
                     if sc.input_transcription and sc.input_transcription.text:
                         inb.append(sc.input_transcription.text)
+                        if not self.heard_at or self.reply_at >= self.heard_at:
+                            self.heard_at = time.monotonic()
                         self.thinking, self.interrupted = True, False
                     if sc.output_transcription and sc.output_transcription.text:
                         outb.append(sc.output_transcription.text)
@@ -1481,7 +1516,12 @@ class Brain:
                     fish.flush()
                     out = []
                     calls = list(r.tool_call.function_calls)
-                    results = await asyncio.gather(*[self.loop.run_in_executor(None, self.app.tool, fc.name, dict(fc.args or {})) for fc in calls], return_exceptions=True)
+                    self.tool_busy = True
+                    try:
+                        results = await asyncio.gather(*[self.loop.run_in_executor(None, self.app.tool, fc.name, dict(fc.args or {})) for fc in calls], return_exceptions=True)
+                    finally:
+                        self.tool_busy = False
+                        self.reply_at = time.monotonic()
                     for fc, res in zip(calls, results):
                         if isinstance(res, Exception):
                             res = "Error: %s" % res
