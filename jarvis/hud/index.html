@@ -332,12 +332,16 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
     <button class="btn go" id="fk-use" style="margin-top:14px">Use the best free AI</button>
     <p id="fk-msg" role="status" style="font-size:11px;color:var(--dim);margin:8px 0 0"></p>
   </div>
+  <details id="adv-local"><summary style="cursor:pointer;color:var(--dim);font-size:10px;letter-spacing:.24em;margin:6px 0 10px">ADVANCED · AI ON THIS PC</summary>
   <div class="lbox">
-    <b>OR: LOCAL AI · PRIVATE · NEEDS A STRONG GPU</b>
+    <b>LOCAL AI · PRIVATE · NEEDS A STRONG GPU (SLOWER)</b>
     <p id="la-hw">Checking this PC…</p>
     <button class="btn go" id="la-go">Set up local AI</button>
     <div class="lbar"><i id="la-bar"></i></div><p id="la-msg" role="status"></p>
+    <div class="sw"><div>Use it as a backup<small>Only if every free cloud AI is unavailable</small></div><input type="checkbox" id="s-lfb" aria-label="Local AI as backup"></div>
+    <button class="btn no" id="la-rm" style="margin-top:12px">Remove local AI</button>
   </div>
+  </details>
   <label for="s-prov">AI model provider</label>
   <select id="s-prov"></select>
   <div id="brain-fields">

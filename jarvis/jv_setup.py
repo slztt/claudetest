@@ -211,21 +211,46 @@ def setup(local="ask", quiet=False):
         if g or q:
             cfg_set(**({"api_key": g} if g else {}), **({"groq_key": q} if q else {}), brain_provider="auto", stt_mode="auto")
             say("ok", "Free AI brain ready (%s)" % " + ".join(x for x, k in (("Gemini", g), ("Groq", q)) if k))
-            if local == "ask" and state.get("local_ai") is None:
-                local = "no"   # a cloud brain is enough; the local AI stays optional (Configuration > Set up local AI)
+            local = "no"   # cloud AI only
         else:
             say("warn", "Skipped. You can add the keys any time in Configuration (cog) > Free AI.")
-    elif cfg.get("brain_provider") == "ollama" and (cfg.get("api_key") or cfg.get("groq_key")):
-        cfg_set(brain_provider="auto")    # keys exist: use the free chain, with the local model as the last fallback
-        say("ok", "Brain set to Best free AI (cloud first, your local model as backup)")
+    elif cfg.get("brain_provider") in ("ollama", "gemini-live") and (cfg.get("api_key") or cfg.get("groq_key")):
+        cfg_set(brain_provider="auto", stt_mode="auto", vision_model="")
+        say("ok", "Brain set to Best free AI (cloud: Gemini, Groq)")
+    if cfg.get("brain_provider") == "ollama" and not (cfg.get("api_key") or cfg.get("groq_key")):
+        cfg_set(brain_provider="auto")   # no local brain any more: JARVIS opens Configuration for the free keys
+
+    # 0b. The user prefers cloud AI: offer once to remove the local AI engine and its models ---------
+    cfg = load(CFG, {})
+    if not state.get("local_removal_asked") and info["ollama_installed"] and cfg.get("brain_provider") != "ollama":
+        state["local_removal_asked"] = True
+        save(STATE, state)
+        models_dir = Path.home() / ".ollama" / "models"
+        size = sum(f.stat().st_size for f in models_dir.rglob("*") if f.is_file()) / 2 ** 30 if models_dir.exists() else 0
+        print()
+        say("dim", "JARVIS now uses free cloud AI only. The local AI engine (Ollama) and its models are still on this PC (%.1f GB)." % size)
+        if ask("Remove the local AI to free the space?", default=True):
+            try:
+                subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True) if IS_WIN else subprocess.run(["pkill", "ollama"], capture_output=True)
+                subprocess.run(["taskkill", "/F", "/IM", "ollama app.exe"], capture_output=True) if IS_WIN else None
+                if models_dir.exists():
+                    shutil.rmtree(models_dir, ignore_errors=True)
+                if IS_WIN:
+                    subprocess.run(["winget", "uninstall", "-e", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements"], capture_output=True, timeout=600)
+                cfg_set(local_fallback=False, vision_model="")
+                state["local_ai"] = False
+                save(STATE, state)
+                say("ok", "Local AI removed (%.1f GB freed)." % size)
+            except Exception as e:
+                say("warn", "Could not remove everything (%s). Windows Settings > Apps > Ollama can uninstall it." % str(e)[:100])
 
     # 1. Local AI -------------------------------------------------------------------------------
     have = [m for m in info["best"] if m in info["models"]]
     want_local = state.get("local_ai")
     if local == "yes":
         want_local = True
-    elif local == "no":
-        want_local = False
+    elif local == "no" or local == "ask":
+        want_local = bool(want_local) and local != "no" and load(CFG, {}).get("brain_provider") == "ollama"
     elif want_local is None:
         gb = "%d-%d GB" % ((4, 8) if info["vram_gb"] < 8 else (6, 14) if info["vram_gb"] < 20 else (20, 70))
         print()
@@ -372,7 +397,7 @@ def setup(local="ask", quiet=False):
         say("warn", "No brain yet: JARVIS will open Configuration so you can add a free key.")
     state["last_setup"] = time.strftime("%Y-%m-%d %H:%M")
     state["complete"] = not problems
-    state["v"] = 3
+    state["v"] = 4
     save(STATE, state)
     print()
     say("ok" if not problems else "warn", "Setup finished%s." % ("" if not problems else " with warnings: " + "; ".join(problems)))

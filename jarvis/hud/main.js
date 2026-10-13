@@ -194,7 +194,7 @@ function fillSelect(sel, items, current) {
 function openSettings(open) {
   setEl.classList.toggle('open', open);
   $('#b-set').classList.toggle('on', open);
-  if (open) { localInfo(); mcpLoad(); ordersLoad(); }
+  if (open) { mcpLoad(); ordersLoad(); }
   if (open) call('get_devices').then((d) => {
     if (!d) return;
     fillSelect($('#s-mic'), d.inputs, S.settings.mic);
@@ -210,6 +210,7 @@ function loadSettings(s) {
   $('#s-conf').checked = !!s.confirm_risky;
   $('#s-fish').value = s.fish_key || '';
   $('#fk-gem').value = s.api_key || ''; $('#fk-groq').value = s.groq_key || '';
+  $('#s-lfb').checked = !!s.local_fallback;
   voiceNote();
   brainFields();
   applyA11y();
@@ -305,6 +306,13 @@ async function localInfo() {
   $('#s-kv').value = S.settings.kokoro_voice || 'bm_george';
   if (d.installed.length) $('#s-models').innerHTML = d.installed.map((m) => `<option value="${esc(m)}">`).join('');
 }
+$('#s-lfb').addEventListener('change', (e) => put('local_fallback', e.target.checked));
+$('#la-rm').onclick = async () => {
+  $('#la-msg').textContent = 'Removing the local AI engine and its models…';
+  const r = await call('remove_local');
+  $('#la-msg').textContent = r || 'Removing needs the JARVIS app.';
+};
+$('#adv-local').addEventListener('toggle', (e) => { if (e.target.open) localInfo(); });
 $('#la-go').onclick = async () => {
   const r = await call('local_setup', '', true);
   $('#la-msg').textContent = r === 'started' ? 'Starting…' : (r || 'Local setup needs the JARVIS app.');

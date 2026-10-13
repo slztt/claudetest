@@ -2105,6 +2105,29 @@ class Api:
         except Exception as e:
             return {"ok": False, "text": str(e)[:300]}
 
+    def remove_local(self):
+        """Uninstall Ollama and delete its models (the user prefers cloud AI)."""
+        c = self._c
+        models_dir = Path.home() / ".ollama" / "models"
+        size = sum(f.stat().st_size for f in models_dir.rglob("*") if f.is_file()) / 2 ** 30 if models_dir.exists() else 0
+        try:
+            if IS_WIN:
+                subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], capture_output=True, creationflags=0x08000000)
+                subprocess.run(["taskkill", "/F", "/IM", "ollama app.exe"], capture_output=True, creationflags=0x08000000)
+            else:
+                subprocess.run(["pkill", "ollama"], capture_output=True)
+            shutil.rmtree(models_dir, ignore_errors=True)
+            if IS_WIN:
+                subprocess.run(["winget", "uninstall", "-e", "--id", "Ollama.Ollama", "--silent", "--accept-source-agreements"], capture_output=True,
+                               timeout=600, creationflags=0x08000000)
+        except Exception as e:
+            return "Partly removed (%s). Windows Settings > Apps > Ollama finishes it." % str(e)[:100]
+        for k, v in (("local_fallback", False), ("vision_model", "")):
+            self.set_setting(k, v)
+        if c.cfg.get("brain_provider") == "ollama":
+            self.set_setting("brain_provider", "auto")
+        return "Local AI removed; %.1f GB freed." % size
+
     def open_url(self, url):
         if str(url).startswith("https://"):
             webbrowser.open(str(url))

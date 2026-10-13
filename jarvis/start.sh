@@ -35,7 +35,7 @@ group requirements-auto.txt auto1.flag "the power packages" 0
 
 # scan the PC and set up the local AI, voice, speech, browser and MCP servers
 LOCAL=ask; [[ "$ARGS" == *" nolocal "* ]] && LOCAL=no
-if [[ "$ARGS" == *" repair "* ]] || ! grep -q '"complete": true' "$HOME/.jarvis/setup.json" 2>/dev/null || ! grep -q '"v": 3' "$HOME/.jarvis/setup.json" 2>/dev/null; then
+if [[ "$ARGS" == *" repair "* ]] || ! grep -q '"complete": true' "$HOME/.jarvis/setup.json" 2>/dev/null || ! grep -q '"v": 4' "$HOME/.jarvis/setup.json" 2>/dev/null; then
   venv/bin/python jv_setup.py setup --local $LOCAL
 else
   say 96 "  OK" "Health check passed (./start.sh repair to rescan)"

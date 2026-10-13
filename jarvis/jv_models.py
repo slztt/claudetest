@@ -24,7 +24,7 @@ IS_MAC = platform.system() == "Darwin"
 
 # name: (label, api style, default base url, needs key, model hint, whisper model for speech input or "")
 PROVIDERS = {
-    "auto": ("Best free AI · automatic (Gemini, Groq, local)", "auto", "", False, "", ""),
+    "auto": ("Best free AI · automatic (Gemini, Groq)", "auto", "", False, "", ""),
     "gemini-live": ("Gemini Live · native voice", "live", "", True, "", ""),
     "anthropic": ("Anthropic · Claude", "anthropic", "https://api.anthropic.com/v1", True, "claude-sonnet-5-5", ""),
     "openai": ("OpenAI", "openai", "https://api.openai.com/v1", True, "gpt-4.1-mini", "whisper-1"),
@@ -44,14 +44,14 @@ TTS_MODES = ("auto", "fish", "kokoro", "provider", "system", "off")
 
 # Saved in config.json next to the original settings.
 MODEL_CFG = {
-    "brain_provider": "auto", "brain_model": "", "brain_key": "", "brain_url": "", "groq_key": "", "openrouter_key": "",
+    "brain_provider": "auto", "brain_model": "", "brain_key": "", "brain_url": "", "groq_key": "", "openrouter_key": "", "local_fallback": False,
     "stt_mode": "auto", "tts_mode": "auto", "tts_voice": "",
     "brain_think": "auto", "brain_ctx": 0, "tool_limit": 0, "vision_model": "", "kokoro_voice": "bm_george", "kokoro_speed": 0.95,
     # HUD / accessibility (stored here so they survive restarts; the HUD applies them)
     "ui_reduce_motion": False, "ui_contrast": False, "ui_scale": 1.0, "ui_captions": True, "ui_spin": 0.45,
     "home_name": "", "home_lat": "", "home_lon": "",
 }
-_BOOL = {"ui_reduce_motion", "ui_contrast", "ui_captions"}
+_BOOL = {"ui_reduce_motion", "ui_contrast", "ui_captions", "local_fallback"}
 BRAIN_KEYS = {"brain_provider", "brain_model", "brain_key", "brain_url", "brain_think", "brain_ctx", "tool_limit", "vision_model", "groq_key", "openrouter_key", "api_key"}
 
 
@@ -1092,8 +1092,8 @@ class AutoClient:
             k = (self.cfg.get(key) or "").strip() if key else ""
             if key and not k:
                 continue
-            if prov == "ollama" and not ollama_up():
-                continue
+            if prov == "ollama" and (not self.cfg.get("local_fallback") or not ollama_up()):
+                continue      # cloud only unless the user turned the local fallback on
             c = ChatClient({**self.cfg, "brain_provider": prov, "brain_key": k, "brain_url": "", "brain_model": "",
                             "brain_think": self.cfg.get("brain_think", "auto")})
             c.model = (self.cfg.get("brain_model") if prov == "ollama" and self.cfg.get("brain_model") else "") or _pick_model(c, prov)
@@ -1103,9 +1103,9 @@ class AutoClient:
         return out
 
     def problem(self):
-        if any((self.cfg.get(k) or "").strip() for _, k in FREE_CHAIN if k) or ollama_up():
+        if any((self.cfg.get(k) or "").strip() for _, k in FREE_CHAIN if k) or (self.cfg.get("local_fallback") and ollama_up()):
             return ""
-        return "Add a free Groq or Gemini key in Configuration (the Get free key buttons open the pages), or set up the local AI."
+        return "Add a free Gemini or Groq key in Configuration > Free AI (the Get free key buttons open the pages)."
 
     def list_models(self):
         return ["%s: %s" % (c.name, c.model) for c in self.members()]
