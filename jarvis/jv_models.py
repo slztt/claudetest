@@ -34,23 +34,24 @@ PROVIDERS = {
     "deepseek": ("DeepSeek", "openai", "https://api.deepseek.com/v1", True, "deepseek-chat", ""),
     "xai": ("xAI · Grok", "openai", "https://api.x.ai/v1", True, "grok-3-mini", ""),
     "together": ("Together AI", "openai", "https://api.together.xyz/v1", True, "meta-llama/Llama-3.3-70B-Instruct-Turbo", ""),
-    "ollama": ("Ollama · local", "openai", "http://localhost:11434/v1", False, "llama3.1", ""),
+    "ollama": ("Ollama · local, free, private", "ollama", "http://localhost:11434", False, "qwen3:8b", ""),
     "lmstudio": ("LM Studio · local", "openai", "http://localhost:1234/v1", False, "local-model", ""),
     "custom": ("Custom OpenAI-compatible", "openai", "", False, "", ""),
 }
 STT_MODES = ("auto", "provider", "gemini", "local", "off")
-TTS_MODES = ("auto", "fish", "provider", "system", "off")
+TTS_MODES = ("auto", "fish", "kokoro", "provider", "system", "off")
 
 # Saved in config.json next to the original settings.
 MODEL_CFG = {
     "brain_provider": "gemini-live", "brain_model": "", "brain_key": "", "brain_url": "",
     "stt_mode": "auto", "tts_mode": "auto", "tts_voice": "",
+    "brain_think": "auto", "brain_ctx": 0, "tool_limit": 0, "vision_model": "", "kokoro_voice": "bm_george", "kokoro_speed": 0.95,
     # HUD / accessibility (stored here so they survive restarts; the HUD applies them)
-    "ui_reduce_motion": False, "ui_contrast": False, "ui_scale": 1.0, "ui_captions": True,
+    "ui_reduce_motion": False, "ui_contrast": False, "ui_scale": 1.0, "ui_captions": True, "ui_spin": 0.45,
     "home_name": "", "home_lat": "", "home_lon": "",
 }
 _BOOL = {"ui_reduce_motion", "ui_contrast", "ui_captions"}
-BRAIN_KEYS = {"brain_provider", "brain_model", "brain_key", "brain_url"}
+BRAIN_KEYS = {"brain_provider", "brain_model", "brain_key", "brain_url", "brain_think", "brain_ctx", "tool_limit", "vision_model"}
 
 
 def coerce(key, value):
@@ -58,6 +59,14 @@ def coerce(key, value):
         return value in (True, "true", "True", 1, "1")
     if key == "ui_scale":
         return max(0.8, min(1.6, float(value)))
+    if key in ("brain_ctx", "tool_limit"):
+        return max(0, min(262144, int(float(value or 0))))
+    if key == "kokoro_speed":
+        return max(0.6, min(1.5, float(value)))
+    if key == "brain_think" and str(value) not in ("auto", "on", "off", "low", "medium", "high"):
+        raise ValueError("bad think level")
+    if key == "ui_spin":
+        return max(0.05, min(1.5, float(value)))
     if key == "brain_provider":
         v = str(value).strip().lower()
         if v not in PROVIDERS:
@@ -91,6 +100,16 @@ def provider_list():
 # ---------------------------------------------------------------------------------------------
 # Tool schemas: the original declarations use Gemini's upper-case types; everyone else wants JSON Schema.
 # ---------------------------------------------------------------------------------------------
+def _loads(a):
+    if isinstance(a, dict):
+        return a
+    try:
+        v = json.loads(a or "{}")
+        return v if isinstance(v, dict) else {}
+    except Exception:
+        return {}
+
+
 def json_schema(s):
     if isinstance(s, dict):
         out = {}
@@ -156,6 +175,9 @@ class ChatClient:
             self.name, self.style, base, hint = "gemini", "openai", PROVIDERS["gemini"][2], PROVIDERS["gemini"][4]
         override = "" if self.style == "live" or provider_info(cfg)[1][1] == "live" else (cfg.get("brain_url") or "")
         self.base = (override or base or "").rstrip("/")
+        if self.style == "ollama" and self.base.endswith("/v1"):
+            self.base = self.base[:-3]
+        self.thinking = ""
         self.key = (cfg.get("brain_key") or "").strip() or ((cfg.get("api_key") or "").strip() if self.name == "gemini" else "")
         self.model = (model or cfg.get("brain_model") or hint or "").strip()
 
@@ -177,6 +199,9 @@ class ChatClient:
         return h
 
     def list_models(self):
+        if self.style == "ollama":
+            j = _http(self.base + "/api/tags", timeout=10)
+            return sorted(m.get("name") for m in j.get("models") or [] if m.get("name"))
         if self.style == "anthropic":
             j = _http(self.base + "/models?limit=100", headers=self._headers(), timeout=20)
         else:
@@ -189,6 +214,9 @@ class ChatClient:
         """Returns (text, [(id, name, args)], assistant_message_in_openai_format)."""
         if self.style == "anthropic":
             return self._anthropic(system, messages, tools, max_tokens, temperature)
+        if self.style == "ollama":
+            return self._ollama(system, messages, tools, max_tokens, temperature)
+        messages = [{k: v for k, v in m.items() if not (m["role"] == "tool" and k == "name")} for m in messages]
         body = {"model": self.model, "messages": [{"role": "system", "content": system}] + messages,
                 "max_tokens": max_tokens, "temperature": temperature}
         if tools:
@@ -225,6 +253,83 @@ class ChatClient:
         if calls:
             msg["tool_calls"] = [{"id": i, "type": "function", "function": {"name": n, "arguments": json.dumps(a)}} for i, n, a in calls]
         return text, calls, msg
+
+    # ---- Ollama native API: real context size, thinking, tools, images ----
+    def ctx_size(self):
+        n = int(self.cfg.get("brain_ctx") or 0)
+        if n:
+            return n
+        gb = hardware().get("vram_gb") or 0
+        return 32768 if gb >= 16 else 16384 if gb >= 8 else 8192
+
+    def think_value(self):
+        t = str(self.cfg.get("brain_think") or "auto")
+        if t == "off":
+            return False
+        if self.model.startswith("gpt-oss"):
+            return t if t in ("low", "medium", "high") else "medium"
+        return True
+
+    def _ollama(self, system, messages, tools, max_tokens, temperature):
+        msgs = [{"role": "system", "content": system}]
+        for m in messages:
+            r, c = m["role"], m.get("content")
+            if r == "tool":
+                msgs.append({"role": "tool", "content": str(c or ""), "tool_name": m.get("name", "")})
+            elif r == "assistant":
+                o = {"role": "assistant", "content": c or ""}
+                if m.get("tool_calls"):
+                    o["tool_calls"] = [{"function": {"name": tc["function"]["name"], "arguments": _loads(tc["function"].get("arguments"))}} for tc in m["tool_calls"]]
+                msgs.append(o)
+            elif isinstance(c, list):
+                msgs.append({"role": "user", "content": " ".join(p.get("text", "") for p in c if p.get("type") == "text"),
+                             "images": [p["image_url"]["url"].split(",", 1)[1] for p in c if p.get("type") == "image_url"]})
+            else:
+                msgs.append({"role": r, "content": str(c or "")})
+        body = {"model": self.model, "messages": msgs, "stream": False, "keep_alive": "30m",
+                "options": {"num_ctx": self.ctx_size(), "temperature": temperature, "num_predict": max(max_tokens, 4096)}}
+        th = self.think_value()
+        if th is not False:
+            body["think"] = th
+        if tools:
+            body["tools"] = tool_specs(tools, "openai")
+        try:
+            j = _http(self.base + "/api/chat", body, timeout=600)
+        except ModelError as e:
+            msg = str(e).lower()
+            if "think" in msg:                      # model without a thinking mode
+                body.pop("think", None)
+                j = _http(self.base + "/api/chat", body, timeout=600)
+            elif tools and "tool" in msg:           # model without tool support: still answer
+                body.pop("tools", None)
+                j = _http(self.base + "/api/chat", body, timeout=600)
+            elif "not found" in msg:
+                raise ModelError("The model %s is not downloaded. Use 'Set up local AI' in Configuration, or run: ollama pull %s" % (self.model, self.model))
+            else:
+                raise
+        m = j.get("message") or {}
+        self.thinking = (m.get("thinking") or "").strip()
+        text = re.sub(r"<think>.*?</think>", "", m.get("content") or "", flags=re.S).strip()
+        calls = []
+        for i, tc in enumerate(m.get("tool_calls") or []):
+            fn = tc.get("function") or {}
+            args = fn.get("arguments")
+            calls.append(("call_%d_%d" % (int(time.time() * 1000) % 100000, i), fn.get("name", ""), _loads(args)))
+        out = {"role": "assistant", "content": text or None}
+        if calls:
+            out["tool_calls"] = [{"id": i, "type": "function", "function": {"name": n, "arguments": json.dumps(a)}} for i, n, a in calls]
+        return text, calls, out
+
+    def describe_image(self, b64, question=""):
+        """For text-only local models: a local vision model turns a screenshot into a detailed description."""
+        vm = (self.cfg.get("vision_model") or "").strip()
+        if not vm:
+            return ""
+        j = _http(self.base + "/api/chat", {"model": vm, "stream": False, "options": {"num_ctx": 8192}, "messages": [{"role": "user", "images": [b64],
+                  "content": "Describe this screenshot for someone who must operate it: the app and window, every visible piece of text, buttons, fields, "
+                             "menus and their approximate pixel positions (x, y from the top left), and anything that looks like an error or dialog. "
+                             + (question or "")}]}, timeout=300)
+        return ((j.get("message") or {}).get("content") or "").strip()
 
     # ---- Anthropic Messages API ----
     @staticmethod
@@ -385,11 +490,13 @@ def local_transcribe(pcm16k):
         raise ModelError("faster-whisper is not installed.")
     if _whisper["model"] is None:
         try:
-            from faster_whisper import WhisperModel
+            import jv_auto
+            WhisperModel = jv_auto.ensure("faster-whisper", "faster_whisper").WhisperModel   # installed on first use
         except Exception:
             _whisper["failed"] = True
-            raise ModelError("faster-whisper is not installed (pip install faster-whisper).")
-        _whisper["model"] = WhisperModel("base", device="auto", compute_type="int8")
+            raise ModelError("faster-whisper could not be installed (pip install faster-whisper).")
+        # small.en-sized accuracy at base speed on CPU; the GPU is used when CUDA is available
+        _whisper["model"] = WhisperModel("small" if (hardware().get("vram_gb") or 0) >= 4 else "base", device="auto", compute_type="int8")
     a = np.frombuffer(pcm16k, np.int16).astype(np.float32) / 32768
     segs, _ = _whisper["model"].transcribe(a, beam_size=1, vad_filter=True)
     return " ".join(s.text for s in segs).strip()
@@ -509,7 +616,8 @@ class ChatBrain:
     def _transcribe(self, pcm):
         cfg, mode = self.app.cfg, self.app.cfg.get("stt_mode", "auto")
         wav = pcm_to_wav(pcm, self.IN_RATE)
-        order = {"provider": ["provider"], "gemini": ["gemini"], "local": ["local"], "off": []}.get(mode, ["provider", "gemini", "local"])
+        order = {"provider": ["provider"], "gemini": ["gemini"], "local": ["local"], "off": []}.get(
+            mode, ["local", "provider", "gemini"] if self.client.style == "ollama" else ["provider", "gemini", "local"])
         last = None
         for how in order:
             try:
@@ -550,9 +658,11 @@ class ChatBrain:
     def _turn(self, text, gen):
         self.turn_open = True
         self.history.append({"role": "user", "content": text})
-        decls = self.tools()
+        decls = select_tools(self.tools(), text + " " + " ".join(str(m.get("content") or "")[:200] for m in self.history[-6:]), self.tool_limit())
         for _ in range(self.MAX_STEPS):
-            reply, calls, msg = self.client.chat(self.app.prompt(), self._trimmed(), decls)
+            reply, calls, msg = self.client.chat(self.app.prompt(), self._trimmed(), decls, max_tokens=1500)
+            if self.client.thinking:
+                self.app.ui({"t": "thought", "text": self.client.thinking[-1200:]})
             self.history.append(msg)
             if reply and gen == self.gen:
                 self.app.post("log", "jarvis", reply)
@@ -564,12 +674,25 @@ class ChatBrain:
                     res = "Cancelled: the user interrupted."
                 else:
                     res = self.app.tool(name, args)
-                self.history.append({"role": "tool", "tool_call_id": cid, "content": str(res)[:8000]})
+                self.history.append({"role": "tool", "tool_call_id": cid, "name": name, "content": str(res)[:8000]})
+            if self.images and self.client.style == "ollama" and (self.app.cfg.get("vision_model") or "").strip():
+                imgs, self.images = self.images, []
+                try:
+                    desc = self.client.describe_image(imgs[-1], "The user asked: " + text)
+                except Exception as e:
+                    desc = "(the vision model failed: %s)" % str(e)[:160]
+                self.history.append({"role": "user", "content": "[System] What the screen shows (from the vision model): " + desc})
             if self.images:
                 imgs, self.images = self.images, []
                 self.history.append({"role": "user", "content": [{"type": "text", "text": "[System] Screenshot / camera frame:"}] +
                                      [{"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + b}} for b in imgs]})
         self.app.post("log", "sys", "Stopped after %d tool rounds." % self.MAX_STEPS)
+
+    def tool_limit(self):
+        n = int(self.app.cfg.get("tool_limit") or 0)
+        if n:
+            return n
+        return 32 if self.client.style == "ollama" or self.client.name == "lmstudio" else 0   # small models drown in 80 tool definitions
 
     def _trimmed(self):
         h = self.history[-self.MAX_TURNS:]
@@ -607,13 +730,20 @@ class ChatBrain:
             self.speaking_tts = True
             try:
                 mode, pcm = self.app.cfg.get("tts_mode", "auto"), b""
-                if mode in ("auto", "provider") and self.client.name == "openai":
+                if mode in ("auto", "kokoro"):
+                    try:
+                        pcm = kokoro_pcm(self.app, s, self.OUT_RATE)
+                    except Exception as e:
+                        if mode == "kokoro" or not getattr(self, "_kwarned", False):
+                            self._kwarned = True
+                            self.app.post("log", "sys", "Local voice unavailable (%s); using a fallback voice." % str(e)[:160])
+                if not pcm and mode in ("auto", "provider") and self.client.name == "openai":
                     try:
                         pcm = self.client.speak(s, self.app.cfg.get("tts_voice", ""))
                     except Exception as e:
                         if mode == "provider":
                             self.app.post("log", "sys", "Provider voice failed: %s" % str(e)[:160])
-                if not pcm and mode in ("auto", "system", "provider"):
+                if not pcm and mode in ("auto", "system", "provider", "kokoro"):
                     pcm = system_tts(s, self.OUT_RATE)
                 if pcm and gen == self.gen:
                     self.audio.play(pcm)
@@ -642,7 +772,7 @@ def run_tool_loop(cfg, system, goal, decls, call_tool, max_steps=30, should_stop
         for cid, name, args in calls:
             if on_step:
                 on_step(step, name)
-            msgs.append({"role": "tool", "tool_call_id": cid, "content": str(call_tool(name, args))[:6000]})
+            msgs.append({"role": "tool", "tool_call_id": cid, "name": name, "content": str(call_tool(name, args))[:6000]})
     return "Stopped after %d steps without finishing; the work so far is logged." % max_steps
 
 
@@ -656,3 +786,188 @@ def geocode(place):
     label = ", ".join(x for x in (r.get("name"), r.get("admin1"), r.get("country")) if x)
     return label, float(r["latitude"]), float(r["longitude"])
 
+
+
+# ---------------------------------------------------------------------------------------------
+# Tool routing: local models do far better with the 30 tools that matter than with all 80+.
+# ---------------------------------------------------------------------------------------------
+ESSENTIAL = ["run_command", "run_script", "open_app", "open_website", "web_search", "read_webpage", "browser", "ui_auto", "screen_text",
+             "look_at_screen", "type_text", "press_keys", "wait_for", "file_ops", "read_file", "write_file", "calendar", "hologram",
+             "deep_research", "start_background_task", "memory", "set_timer", "autopilot", "mcp"]
+
+
+def select_tools(decls, query, limit):
+    if not limit or len(decls) <= limit:
+        return decls
+    words = set(re.findall(r"[a-z0-9]{3,}", query.lower()))
+    by = {d["name"]: d for d in decls}
+    chosen = [by[n] for n in ESSENTIAL if n in by]
+    rest = []
+    for d in decls:
+        if d in chosen:
+            continue
+        hay = (d["name"].replace("_", " ") + " " + d.get("description", "")).lower()
+        score = sum(3 if w in d["name"].lower() else 1 for w in words if w in hay)
+        rest.append((score, d))
+    rest.sort(key=lambda x: -x[0])
+    chosen += [d for sc, d in rest if sc > 0][:max(0, limit - len(chosen))]
+    return chosen[:max(limit, len(chosen))]
+
+
+# ---------------------------------------------------------------------------------------------
+# Hardware check and the best local model for it (Ollama). Several candidates per tier: the first that
+# downloads wins, so a renamed tag never leaves the user without a brain.
+# ---------------------------------------------------------------------------------------------
+_HW = {}
+
+
+def hardware():
+    if _HW:
+        return _HW
+    vram, gpu = 0.0, ""
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=8,
+                           creationflags=0x08000000 if IS_WIN else 0)
+        if r.returncode == 0 and r.stdout.strip():
+            name, mem = r.stdout.strip().splitlines()[0].rsplit(",", 1)
+            gpu, vram = name.strip(), float(mem) / 1024
+    except Exception:
+        pass
+    ram = 0.0
+    try:
+        import psutil
+        ram = psutil.virtual_memory().total / 2 ** 30
+    except Exception:
+        pass
+    if IS_MAC and not vram:          # Apple silicon: the GPU shares system memory
+        gpu, vram = "Apple silicon (unified memory)", ram * 0.7
+    _HW.update({"gpu": gpu or "no NVIDIA GPU found", "vram_gb": round(vram, 1), "ram_gb": round(ram, 1)})
+    return _HW
+
+
+TIERS = [  # (min GB of fast memory, thinking + tool-calling brains in preference order, vision helper)
+    (60, ["gpt-oss:120b", "qwen3.6:35b", "qwen3:30b"], "qwen2.5vl:32b"),
+    (22, ["qwen3.6:35b", "qwen3:30b", "gpt-oss:20b"], "qwen2.5vl:7b"),
+    (14, ["gpt-oss:20b", "qwen3:14b"], "qwen2.5vl:7b"),
+    (7, ["qwen3.5:9b", "qwen3:8b"], "gemma3:4b"),
+    (0, ["qwen3:4b", "qwen3:1.7b"], "gemma3:4b"),
+]
+
+
+def recommend():
+    hw = hardware()
+    mem = hw["vram_gb"] or hw["ram_gb"] * 0.5   # CPU only: about half the RAM is usable for a model, and it will be slow
+    for need, models, vision in TIERS:
+        if mem >= need:
+            return {"models": models, "vision": vision, "hw": hw, "cpu_only": not hw["vram_gb"]}
+    return {"models": TIERS[-1][1], "vision": TIERS[-1][2], "hw": hw, "cpu_only": True}
+
+
+def ollama_up(base="http://localhost:11434"):
+    try:
+        _http(base + "/api/version", timeout=3)
+        return True
+    except Exception:
+        return False
+
+
+def ollama_pull(model, progress, base="http://localhost:11434"):
+    """Stream a model download. progress(text, fraction). Raises ModelError when the tag does not exist."""
+    req = urllib.request.Request(base + "/api/pull", data=json.dumps({"model": model, "stream": True}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    last = 0
+    try:
+        with urllib.request.urlopen(req, timeout=7200) as r:
+            for line in r:
+                try:
+                    j = json.loads(line)
+                except Exception:
+                    continue
+                if j.get("error"):
+                    raise ModelError(j["error"])
+                tot, done = j.get("total") or 0, j.get("completed") or 0
+                if time.time() - last > 0.7 or j.get("status") == "success":
+                    last = time.time()
+                    progress("%s: %s" % (model, j.get("status", "")), (done / tot) if tot else None)
+    except urllib.error.HTTPError as e:
+        raise ModelError("HTTP %d: %s" % (e.code, e.read(300).decode("utf-8", "replace")))
+
+
+def install_ollama(progress):
+    """Install Ollama if it is missing and make sure its server is running. Returns '' or a reason it could not."""
+    if ollama_up():
+        return ""
+    exe = shutil.which("ollama")
+    if not exe and IS_WIN:
+        exe_guess = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
+        exe = exe_guess if os.path.exists(exe_guess) else ""
+    if not exe:
+        if IS_WIN:
+            progress("Installing Ollama with winget (a Windows prompt may appear)...", None)
+            r = subprocess.run(["winget", "install", "-e", "--id", "Ollama.Ollama", "--accept-package-agreements", "--accept-source-agreements"],
+                               capture_output=True, text=True, timeout=1800, creationflags=0x08000000)
+            exe = shutil.which("ollama") or os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe")
+            if not os.path.exists(exe):
+                return "winget could not install Ollama (%s). Download it from https://ollama.com/download and run Set up again." % (r.stdout or r.stderr)[-200:]
+        elif IS_MAC:
+            return "Install Ollama from https://ollama.com/download (or: brew install ollama), open it once, then run Set up again."
+        else:
+            return "Install Ollama with: curl -fsSL https://ollama.com/install.sh | sh   then run Set up again."
+    progress("Starting the Ollama server...", None)
+    subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     creationflags=0x08000000 if IS_WIN else 0, start_new_session=not IS_WIN)
+    for _ in range(40):
+        if ollama_up():
+            return ""
+        time.sleep(0.5)
+    return "Ollama is installed but its server did not start. Open the Ollama app once, then run Set up again."
+
+
+# ---------------------------------------------------------------------------------------------
+# Kokoro: a free, local, natural British voice (Apache-2.0, 82M parameters, runs on the CPU in real time)
+# ---------------------------------------------------------------------------------------------
+KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
+KOKORO_VOICES = {"bm_george": "George · British, deep, measured (most JARVIS-like)", "bm_lewis": "Lewis · British, warm",
+                 "bm_daniel": "Daniel · British, crisp", "bm_fable": "Fable · British, storyteller", "am_michael": "Michael · American",
+                 "am_adam": "Adam · American, deep", "bf_emma": "Emma · British", "af_heart": "Heart · American"}
+
+
+class Kokoro:
+    _inst, _lock = None, threading.Lock()
+
+    def __init__(self, folder, ensure_fn, progress=None):
+        self.folder = folder
+        folder.mkdir(parents=True, exist_ok=True)
+        for f in ("kokoro-v1.0.onnx", "voices-v1.0.bin"):
+            dest = folder / f
+            if not dest.exists() or dest.stat().st_size < 1000:
+                if progress:
+                    progress("Downloading the free JARVIS voice (%s, one time)..." % f)
+                tmp = dest.with_suffix(".part")
+                with urllib.request.urlopen(urllib.request.Request(KOKORO_URL + f, headers={"User-Agent": "JARVIS"}), timeout=60) as r, open(tmp, "wb") as fh:
+                    shutil.copyfileobj(r, fh, 1 << 20)
+                tmp.replace(dest)
+        mod = ensure_fn("kokoro-onnx", "kokoro_onnx")
+        self.k = mod.Kokoro(str(folder / "kokoro-v1.0.onnx"), str(folder / "voices-v1.0.bin"))
+
+    @classmethod
+    def get(cls, folder, ensure_fn, progress=None):
+        with cls._lock:
+            if cls._inst is None:
+                cls._inst = Kokoro(folder, ensure_fn, progress)
+            return cls._inst
+
+    def pcm(self, text, voice="bm_george", speed=0.95, rate=24000):
+        lang = "en-gb" if voice.startswith(("b",)) else "en-us"
+        samples, sr = self.k.create(text, voice=voice, speed=float(speed), lang=lang)
+        a = np.asarray(samples, dtype=np.float32)
+        if sr != rate and len(a):
+            a = np.interp(np.linspace(0, len(a) - 1, int(len(a) * rate / sr)), np.arange(len(a)), a)
+        return (np.clip(a, -1, 1) * 32767).astype(np.int16).tobytes()
+
+
+def kokoro_pcm(core, text, rate=24000):
+    import jv_auto
+    k = Kokoro.get(core.voice_dir, lambda pip, mod: jv_auto.ensure(pip, mod, core), lambda t: core.post("status", t))
+    core.post("status", "")
+    return k.pcm(text, core.cfg.get("kokoro_voice") or "bm_george", core.cfg.get("kokoro_speed") or 0.95, rate)

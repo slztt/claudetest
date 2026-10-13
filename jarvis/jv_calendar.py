@@ -695,7 +695,13 @@ class Calendar:
         return "Imported %d events from %s." % (added, p.name)
 
     def t_show(self, a):
-        d = str(a.get("start") or "").strip()[:10] or dt.date.today().isoformat()
+        d = str(a.get("start") or a.get("text") or "").strip() or dt.date.today().isoformat()
+        d = d[:10] if re.match(r"\d{4}-\d{2}-\d{2}", d) else d
+        m = re.fullmatch(r"(?:in\s+)?([a-z]+)\.?(?:\s+(\d{4}))?", d.lower())
+        if m and m.group(1) in MONTHS:   # "March", "december 2027": the first of that month (the coming one)
+            today = dt.date.today()
+            mon, yr = MONTHS[m.group(1)], int(m.group(2)) if m.group(2) else None
+            d = dt.date(yr or (today.year if mon >= today.month else today.year + 1), mon, 1).isoformat()
         if not re.match(r"\d{4}-\d{2}-\d{2}$", d):
             try:
                 d = parse_quick_date(d).isoformat()

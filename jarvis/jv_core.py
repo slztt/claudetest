@@ -59,8 +59,25 @@ def attach(core, here, data, resolve, is_risky, is_hard, all_tools):
     core._ap_lock = threading.Lock()
     core.all_tools = all_tools
     core.gate = lambda cat, title, detail="", risky=True, hard=False: gate(core, cat, title, detail, risky, hard)
-    core.worker_tool_decls = lambda: [t for t in all_tools + NEW_TOOLS + PLUS_TOOLS if t["name"] not in WORKER_BLOCK]
+    core.worker_tool_decls = lambda screen=False, live=True: worker_decls(core, all_tools, screen, live)
     return core
+
+
+SCREEN_TOOLS = {"look_at_screen", "save_screenshot", "ui_control", "mouse_click", "type_text", "press_keys", "scroll_screen", "window_control",
+                "clipboard", "open_app", "open_website", "ui_auto", "screen_text", "browser", "camera_look"}
+
+
+def worker_decls(core, all_tools, screen=False, live=True):
+    """Tools for a background worker. Screen tools only when the user allowed it (autopilot use_screen)."""
+    extra = list(getattr(core, "extra_decls", lambda live=True: [])(live))
+    block = (WORKER_BLOCK - SCREEN_TOOLS) if screen else WORKER_BLOCK | SCREEN_TOOLS
+    block = block | {"start_background_task", "autopilot", "custom_command", "workflow"}
+    out, seen = [], set()
+    for t in all_tools + NEW_TOOLS + PLUS_TOOLS + extra:
+        if t["name"] not in block and t["name"] not in seen:
+            seen.add(t["name"])
+            out.append(t)
+    return out
 
 
 def gate(core, cat, title, detail, risky, hard):

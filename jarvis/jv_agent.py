@@ -16,8 +16,18 @@ MAX_SECONDS = 25 * 60
 FALLBACK_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash")
 
 
-def worker_prompt(core):
-    return (
+def worker_prompt(core, autopilot=False, screen=False):
+    head = ""
+    if autopilot:
+        head = ("AUTOPILOT MODE: the user handed you this goal and is not supervising. Start by writing a short numbered plan (in your first reply, "
+                "before any tool). Then execute it step by step, checking each result. Adapt the plan when reality differs. When a step fails, find "
+                "another way (different tool layer, a script, research the error) at least three times before giving up on it. "
+                + ("You MAY use the screen, mouse and keyboard tools (ui_auto, browser, screen_text, look_at_screen, type_text, press_keys); "
+                   "work in your own windows and avoid disturbing anything else the user has open. " if screen else
+                   "Work without the screen: commands, scripts, files, MCP tools, research. ")
+                + "Finish with a report of what is now done, how you verified it, and anything left for the user.\n")
+    orders = getattr(getattr(core, "power", None), "orders", lambda: "")()
+    return head + ("STANDING ORDERS FROM THE USER:\n%s\n" % orders if orders else "") + (
         "You are the background worker of J.A.R.V.I.S. You are given one goal and must complete it fully, working alone, "
         "using your tools. Nobody can answer questions while you work, so make sensible decisions and note your assumptions.\n"
         "PROTOCOL, always in this order:\n"
@@ -41,7 +51,7 @@ class Agent:
     def __init__(self, core):
         self.core = core
 
-    def start(self, goal, name=""):
+    def start(self, goal, name="", screen=False, minutes=None, autopilot=False):
         goal = (goal or "").strip()
         if not goal:
             return "No goal given."
@@ -50,7 +60,12 @@ class Agent:
             return "Background tasks need the Gemini API key."
         if not jv_models.is_live(cfg) and jv_models.ChatClient(cfg).problem():
             return "Background tasks need a working model: " + jv_models.ChatClient(cfg).problem()
-        job = self.core.jobs.create("agent", name or goal[:70])  # raises RuntimeError when too many are running
+        try:
+            job = self.core.jobs.create("autopilot" if autopilot else "agent", name or goal[:70])
+        except RuntimeError as e:
+            return str(e)
+        job.opts = {"screen": bool(screen), "seconds": int(minutes * 60) if minutes else MAX_SECONDS, "autopilot": autopilot,
+                    "steps": max(MAX_STEPS, int((minutes or 25) * 3)) if autopilot else MAX_STEPS}
         threading.Thread(target=self._run, args=(job, goal), daemon=True).start()
         return ("Started background task %s: %s. It runs on its own and will report back when finished; "
                 "the user can keep talking to you meanwhile." % (job.id, job.label))
@@ -80,18 +95,19 @@ class Agent:
         """Same protocol on any provider (OpenAI-compatible, Anthropic, local)."""
         core, t0 = self.core, time.time()
         try:
+            o = getattr(job, "opts", {})
             def stop():
-                return job.cancel_flag or time.time() - t0 > MAX_SECONDS
+                return job.cancel_flag or time.time() - t0 > o.get("seconds", MAX_SECONDS)
             final = jv_models.run_tool_loop(
-                core.cfg, worker_prompt(core), goal, core.worker_tool_decls(),
-                lambda n, a: core.tool(n, a, job=job), MAX_STEPS, stop,
+                core.cfg, worker_prompt(core, o.get("autopilot"), o.get("screen")), goal, core.worker_tool_decls(o.get("screen"), False),
+                lambda n, a: core.tool(n, a, job=job), o.get("steps", MAX_STEPS), stop,
                 model=(core.cfg.get("worker_model") or "").strip() or None,
                 on_step=lambda i, n: core.jobs.set_progress(job, "step %d: %s" % (i, n.replace("_", " "))))
             if final is None:
                 if job.cancel_flag:
                     core.jobs.finish(job, "cancelled", "Cancelled by the user.")
                 else:
-                    core.jobs.finish(job, "failed", "Stopped: the task ran longer than %d minutes." % (MAX_SECONDS // 60))
+                    core.jobs.finish(job, "failed", "Stopped: the task ran longer than %d minutes." % (o.get("seconds", MAX_SECONDS) // 60))
                 return
             status = "done" if final and not final.startswith("Stopped") else "failed"
             core.jobs.finish(job, status, (final or "Finished with no report.")[:900])
@@ -106,18 +122,19 @@ class Agent:
         try:
             client = genai.Client(api_key=core.cfg["api_key"], http_options={"api_version": "v1beta"})
             models, idx = self._models(), 0
+            o = getattr(job, "opts", {})
             cfg = types.GenerateContentConfig(
-                system_instruction=worker_prompt(core), temperature=0.2,
-                tools=[types.Tool(function_declarations=core.worker_tool_decls())],
+                system_instruction=worker_prompt(core, o.get("autopilot"), o.get("screen")), temperature=0.2,
+                tools=[types.Tool(function_declarations=core.worker_tool_decls(o.get("screen"), True))],
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
             contents = [types.Content(role="user", parts=[types.Part(text="GOAL: " + goal)])]
             final = ""
-            for step in range(1, MAX_STEPS + 1):
+            for step in range(1, o.get("steps", MAX_STEPS) + 1):
                 if job.cancel_flag:
                     core.jobs.finish(job, "cancelled", "Cancelled by the user.")
                     return
-                if time.time() - t0 > MAX_SECONDS:
-                    core.jobs.finish(job, "failed", "Stopped: the task ran longer than %d minutes." % (MAX_SECONDS // 60))
+                if time.time() - t0 > o.get("seconds", MAX_SECONDS):
+                    core.jobs.finish(job, "failed", "Stopped: the task ran longer than %d minutes." % (o.get("seconds", MAX_SECONDS) // 60))
                     return
                 resp, idx = self._call(client, models, idx, contents, cfg)
                 cand = resp.candidates[0] if resp.candidates else None

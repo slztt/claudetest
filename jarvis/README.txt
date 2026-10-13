@@ -103,3 +103,58 @@ JARVIS-3: ACCESSIBILITY
 Configuration > Accessibility: reduce motion (also follows your system setting), high contrast, captions on/off and
 text/panel size. Every button has a label, JARVIS's replies are read out by screen readers, the authorisation card is a
 proper dialog, and everything on the hologram (satellite readouts, places) is also written out as text.
+
+JARVIS-3: FREE LOCAL AI (THINKS, PRIVATE, NO KEY)
+Configuration (cog) > "Set up local AI". One click: installs Ollama, checks your graphics card, downloads the best free
+model your PC can run, plus a small vision model so it can see your screen, and switches JARVIS to it with a local voice.
+  60 GB+ (big Mac / workstation): gpt-oss:120b    22-32 GB GPU: Qwen3.6 35B (or qwen3:30b)    14-16 GB: gpt-oss:20b
+  8-12 GB: Qwen3.5 9B (or qwen3:8b)               less / no GPU: qwen3:4b (works on the CPU, slowly)
+These "think" before answering (Thinking setting: automatic, always, hard, briefly, off) and call tools.
+JARVIS talks to Ollama natively, so the model gets a large context (8-32k depending on your GPU) instead of Ollama's tiny
+default, and only the ~30 tools that matter for each request are sent (small models get confused by 80+). That is what
+made local models feel "really bad" before. A bigger GPU = a smarter JARVIS. Hosted models (Claude, GPT, Gemini) are
+still smarter than any model a home PC can run; you can switch at any time.
+
+JARVIS-3: FREE VOICE
+Voice output > Kokoro: a free, offline, natural British voice ("George" is the most JARVIS-like; also Lewis, Daniel,
+Fable). Downloads once (about 340 MB) and runs on the CPU faster than real time. It works with every brain, including
+Gemini Live. Fish Audio's film voice is still available if you have a key. Speech recognition runs locally too
+(faster-whisper), so a local setup sends nothing to the internet except searches and web pages.
+
+JARVIS-3: MCP (ROBLOX STUDIO, BLENDER AND MORE)
+Configuration > MCP servers. Add a preset or import what you already set up for Claude Desktop / Cursor:
+- Roblox Studio: install the official Roblox Studio MCP server (github.com/Roblox/studio-rust-mcp-server); its installer
+  adds the Studio plugin. Then "Import from Claude Desktop" or add the roblox_studio preset. Keep Studio open.
+- Blender: blender-mcp. Add the preset (JARVIS installs uv for you), install the add-on in Blender, then
+  N panel > BlenderMCP > Start MCP Server.
+- Also: Playwright browser, file system, fetch, sequential thinking, memory, GitHub, or any server (Edit JSON).
+Their tools appear to JARVIS as server__tool and work with every model. He can add servers himself ("set up the Blender MCP").
+
+JARVIS-3: HE DOES THINGS ON HIS OWN
+- Standing orders (Configuration): permanent instructions he follows without you. The default makes him act instead of
+  asking, finish and verify jobs, try three approaches before giving up, research before guessing, and build holograms when
+  explaining physical things. Say "from now on, always ..." and he adds the rule himself.
+- Autopilot: "work on this by yourself: ..." He plans, uses every tool (the screen too if you allow it), checks results,
+  fixes problems and reports back. Up to 4 hours.
+- Deep research: "research ... in the background". Many searches, many sources, follow-ups for gaps, then a cited report
+  in Documents/JARVIS Research. Several can run at once while you keep talking.
+- Scheduled routines (automation tool): "every weekday at 8:30, open Outlook and tell me how many unread emails I have".
+
+JARVIS-3: PC CONTROL THAT WORKS
+He picks the most reliable way to reach anything, verifies, and falls back automatically:
+commands/COM/Settings links -> his own browser (Playwright; sign in once, it remembers) -> any app's buttons and fields
+through Windows UI Automation (no mouse) -> reading and clicking text on screen (Windows' built-in OCR) -> screenshot + mouse.
+wait_for waits for windows, programs, files, on-screen text or an idle CPU instead of guessing delays.
+
+JARVIS-3: HOLOGRAMS HE BUILDS
+Ask him to show or explain an object ("show me how a jet engine works", "hologram of my Roblox castle") and he designs it
+from parts and projects it as a wireframe hologram with labelled callouts; "explode it" separates the parts. He can also
+project real 3D files (.glb, .gltf, .obj, .stl), e.g. a model exported from Blender. Drag to turn, scroll to zoom, Esc to exit.
+
+JARVIS-3: CALENDAR
+Press C, click the calendar button, or ask ("open my calendar for March"). Month, week, day, agenda and year views;
+plain-English quick add ("Gym every Monday and Wednesday 7pm"); repeating events; reminders; drag to reschedule;
+categories; search; public holidays; 16-day forecast (after setting a home location on the Earth view); moon phases;
+free-time finder; .ics import/export for Google Calendar, Outlook and Apple Calendar.
+
+Hologram too fast or too busy? Configuration > Accessibility > Hologram speed, or Reduce motion.

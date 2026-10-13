@@ -18,6 +18,7 @@ async function loadTLE(group) {
 }
 const scene = createScene($('#gl'), { loadTLE, onGlobe: () => globeUI(), onFrame: (cam) => labels(cam) });
 const globe = scene.globe;
+window.__jv = { scene };   // for debugging from the dev tools
 const COLORS = {
   STANDBY: '45,144,216', LISTENING: '85,220,255', THINKING: '255,179,71', SPEAKING: '142,234,255',
   MUTED: '255,77,99', CONNECTING: '111,147,173', SETUP: '255,179,71', BOOT: '47,168,255',
@@ -181,6 +182,7 @@ function fillSelect(sel, items, current) {
 function openSettings(open) {
   setEl.classList.toggle('open', open);
   $('#b-set').classList.toggle('on', open);
+  if (open) { localInfo(); mcpLoad(); ordersLoad(); }
   if (open) call('get_devices').then((d) => {
     if (!d) return;
     fillSelect($('#s-mic'), d.inputs, S.settings.mic);
@@ -239,6 +241,8 @@ function brainFields() {
   $('#s-bkey').placeholder = p.needs_key ? (id === 'gemini' ? 'leave empty to use the Gemini key below' : 'paste the provider API key') : 'not needed for local models';
   $('#s-burl').value = s.brain_url || ''; $('#s-burl').placeholder = p.url || 'https://your-server/v1';
   $('#s-stt').value = s.stt_mode || 'auto'; $('#s-tts').value = s.tts_mode || 'auto';
+  $('#s-think').value = s.brain_think || 'auto'; $('#s-vision').value = s.vision_model || '';
+  if ($('#s-kv').options.length) $('#s-kv').value = s.kokoro_voice || 'bm_george';
   $('#l-gkey').textContent = live ? 'Gemini API key' : 'Gemini API key · optional (voice input, research)';
   $('#brain-note').textContent = live
     ? 'Gemini Live hears and speaks natively. Pick another provider to use Claude, GPT, Llama, Mistral, DeepSeek, Grok, a local Ollama model or any OpenAI-compatible server; every tool and the hologram keep working.'
@@ -255,6 +259,64 @@ $('#s-prov').addEventListener('change', (e) => {
   $(q).addEventListener('keydown', (e) => e.stopPropagation());
 });
 $('#s-stt').addEventListener('change', (e) => put('stt_mode', e.target.value));
+$('#s-think').addEventListener('change', (e) => put('brain_think', e.target.value));
+$('#s-vision').addEventListener('change', (e) => put('vision_model', e.target.value.trim()));
+$('#s-vision').addEventListener('keydown', (e) => e.stopPropagation());
+$('#s-kv').addEventListener('change', (e) => put('kokoro_voice', e.target.value));
+$('#s-kvt').onclick = async () => { const r = await call('test_voice', $('#s-kv').value); if (r && r !== 'ok') $('#brain-note').textContent = r; else if (!r) $('#brain-note').textContent = 'Voice preview needs the JARVIS app.'; };
+
+/* ---------- free local AI ---------- */
+async function localInfo() {
+  const d = await call('local_info');
+  if (!d) { $('#la-hw').textContent = 'One click installs Ollama and the best free model your PC can run (needs the JARVIS app).'; return; }
+  const hw = d.hw;
+  $('#la-hw').innerHTML = `${esc(hw.gpu)}${hw.vram_gb ? ' · ' + hw.vram_gb + ' GB VRAM' : ''} · ${hw.ram_gb} GB RAM.<br>Best brain for this PC: <b style="color:#fff;letter-spacing:.04em">${esc(d.models[0])}</b> (thinks, uses tools), plus <b style="color:#fff;letter-spacing:.04em">${esc(d.vision)}</b> to see the screen.${d.cpu_only ? ' No NVIDIA GPU found, so it will run on the CPU (slower).' : ''}${d.ollama ? ' Ollama is running' + (d.installed.length ? ' with ' + d.installed.length + ' models.' : '.') : ''}`;
+  $('#s-kv').innerHTML = Object.entries(d.voices).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join('');
+  $('#s-kv').value = S.settings.kokoro_voice || 'bm_george';
+  if (d.installed.length) $('#s-models').innerHTML = d.installed.map((m) => `<option value="${esc(m)}">`).join('');
+}
+$('#la-go').onclick = async () => {
+  const r = await call('local_setup', '', true);
+  $('#la-msg').textContent = r === 'started' ? 'Starting…' : (r || 'Local setup needs the JARVIS app.');
+  if (r === 'started') $('#la-go').disabled = true;
+};
+function setupProgress(ev) {
+  $('#la-msg').textContent = ev.text; $('#la-msg').style.color = ev.ok === false ? 'var(--red)' : '';
+  if (ev.pct != null) $('#la-bar').style.width = ev.pct + '%';
+  if (ev.done) { $('#la-go').disabled = false; act('LOCAL AI · ' + (ev.ok ? 'READY' : 'FAILED')); if (ev.ok) { $('#la-bar').style.width = '100%'; localInfo(); } }
+}
+
+/* ---------- MCP servers ---------- */
+let mcpPresets = {};
+window.__renderMcp = () => {
+  const rows = window.__mcpRows || [];
+  $('#mcp-list').innerHTML = rows.length ? rows.map((r) => `<div class="mrow"><i class="${esc(r.status)}" title="${esc(r.status)}"></i><span>${esc(r.name)} · ${r.tools} tools<small title="${esc(r.error || r.command || r.url)}">${esc(r.error || r.command || r.url)}</small></span><button data-mcp-restart="${esc(r.name)}" title="Reconnect">↻</button><button data-mcp-rm="${esc(r.name)}" title="Remove">✕</button></div>`).join('')
+    : '<p class="gnote" style="text-align:left">No servers yet. Pick one below.</p>';
+};
+async function mcpLoad() {
+  const d = await call('mcp_status');
+  if (!d) { $('#mcp-list').innerHTML = '<p class="gnote" style="text-align:left">MCP needs the JARVIS app.</p>'; return; }
+  mcpPresets = d.presets; window.__mcpRows = d.servers; window.__renderMcp();
+  $('#mcp-preset').innerHTML = Object.entries(d.presets).map(([k, v]) => `<option value="${esc(k)}">${esc(v.label)}</option>`).join('');
+  $('#mcp-json').value = d.config;
+  $('#mcp-note').textContent = (d.presets[$('#mcp-preset').value] || {}).note || '';
+}
+$('#mcp-preset').addEventListener('change', (e) => { $('#mcp-note').textContent = (mcpPresets[e.target.value] || {}).note || ''; });
+$('#mcp-add').onclick = async () => { $('#mcp-note').textContent = await call('mcp_action', 'add_preset', $('#mcp-preset').value) || ''; mcpLoad(); };
+$('#mcp-imp').onclick = async () => { $('#mcp-note').textContent = await call('mcp_action', 'import_claude', '') || ''; mcpLoad(); };
+$('#mcp-edit').onclick = () => { const h = !$('#mcp-json').hidden; $('#mcp-json').hidden = h; $('#mcp-jrow').hidden = h; };
+$('#mcp-save').onclick = async () => { $('#mcp-note').textContent = await call('mcp_save', $('#mcp-json').value) || ''; mcpLoad(); };
+$('#mcp-json').addEventListener('keydown', (e) => e.stopPropagation());
+$('#mcp-list').addEventListener('click', async (e) => {
+  const rm = e.target.closest('[data-mcp-rm]'), rs = e.target.closest('[data-mcp-restart]');
+  if (rm) { $('#mcp-note').textContent = await call('mcp_action', 'remove', rm.dataset.mcpRm) || ''; mcpLoad(); }
+  if (rs) { $('#mcp-note').textContent = await call('mcp_action', 'restart', rs.dataset.mcpRestart) || ''; setTimeout(mcpLoad, 1500); }
+});
+
+/* ---------- standing orders ---------- */
+$('#orders').addEventListener('keydown', (e) => e.stopPropagation());
+$('#orders-save').onclick = async () => { const r = await call('orders_save', $('#orders').value); act('STANDING ORDERS · ' + (r || 'needs the JARVIS app')); };
+async function ordersLoad() { const t = await call('orders_get'); $('#orders').value = t || '# Standing orders\n(Available in the JARVIS app.)'; }
 $('#s-tts').addEventListener('change', (e) => put('tts_mode', e.target.value));
 $('#s-list').onclick = async () => {
   const n = $('#brain-note'); n.textContent = 'Asking the provider which models this key can use…';
@@ -281,6 +343,7 @@ function applyA11y() {
   document.body.classList.toggle('nocaps', s.ui_captions === false);
   document.documentElement.style.setProperty('--ui-scale', s.ui_scale || 1);
   scene.setCalm(calm);
+  scene.setSpin(s.ui_spin ?? 0.45); $('#s-spin').value = s.ui_spin ?? 0.45;
   $('#s-calm').checked = !!s.ui_reduce_motion; $('#s-contrast').checked = !!s.ui_contrast;
   $('#s-caps').checked = s.ui_captions !== false; $('#s-scale').value = s.ui_scale || 1;
 }
@@ -289,6 +352,7 @@ $('#s-calm').addEventListener('change', (e) => { put('ui_reduce_motion', e.targe
 $('#s-contrast').addEventListener('change', (e) => { put('ui_contrast', e.target.checked); applyA11y(); });
 $('#s-caps').addEventListener('change', (e) => { put('ui_captions', e.target.checked); applyA11y(); });
 $('#s-scale').addEventListener('input', (e) => { put('ui_scale', +e.target.value); applyA11y(); });
+$('#s-spin').addEventListener('input', (e) => { put('ui_spin', +e.target.value); applyA11y(); });
 $('#s-done').onclick = () => {
   const k = $('#s-key'); if (k.value.trim() !== (S.settings.api_key || '')) put('api_key', k.value.trim());
   const f = $('#s-fish'); if (f.value.trim() !== (S.settings.fish_key || '')) { put('fish_key', f.value.trim()); voiceNote(); }
@@ -321,6 +385,7 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.activeElement !== cmd) {
     if (setEl.classList.contains('open')) openSettings(false);
     else if (cal.isOpen) cal.close();
+    else if (scene.mode === 'model') { setMode('core'); }
     else if (scene.mode === 'globe' && globe.satView) { globe.satView = false; }
     else if (scene.mode === 'globe' && globe.selected) { globe.select(null); }
     else call('stop');
@@ -336,19 +401,21 @@ const gl = $('#gl');
 let drag = null;
 gl.addEventListener('pointerdown', (e) => {
   drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: 0 };
-  if (scene.mode === 'globe') { gl.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); }
+  if (scene.mode !== 'core') { gl.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); }
 });
 gl.addEventListener('pointermove', (e) => {
-  if (!drag || scene.mode !== 'globe') return;
+  if (!drag || scene.mode === 'core') return;
   const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
   drag.lx = e.clientX; drag.ly = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
-  if (!globe.satView) globe.drag(dx, dy);
+  if (scene.mode === 'model') scene.holo.drag(dx, dy);
+  else if (!globe.satView) globe.drag(dx, dy);
 });
 gl.addEventListener('pointerup', (e) => {
   document.body.classList.remove('dragging');
   if (!drag) return;
   const click = drag.moved < 6; drag = null;
   if (!click) return;
+  if (scene.mode === 'model') return;
   if (scene.mode === 'globe') {
     const s = globe.pick(scene.camera, e.clientX, e.clientY, innerWidth, innerHeight, 16);
     if (s) { globe.select(s); act('TARGET LOCK · ' + s.name); scene.pulse(0.35); }
@@ -357,7 +424,7 @@ gl.addEventListener('pointerup', (e) => {
   const r = Math.hypot(e.clientX - innerWidth / 2, e.clientY - innerHeight * 0.46);
   if (r < Math.min(innerWidth, innerHeight) * 0.22) call('wake');
 });
-gl.addEventListener('wheel', (e) => { if (scene.mode === 'globe') { e.preventDefault(); scene.zoomBy(e.deltaY > 0 ? 1.1 : 0.9); } }, { passive: false });
+gl.addEventListener('wheel', (e) => { if (scene.mode !== 'core') { e.preventDefault(); scene.zoomBy(e.deltaY > 0 ? 1.1 : 0.9); } }, { passive: false });
 window.addEventListener('mousemove', (e) => scene.setMouse(e.clientX / innerWidth * 2 - 1, e.clientY / innerHeight * 2 - 1));
 
 /* ---------- clock ---------- */
@@ -383,10 +450,14 @@ window.HUD = {
       case 'pulse': scene.pulse(0.6); break;
       case 'approval': showApproval(ev); break;
       case 'brain': setBrain(ev); break;
+      case 'settings': loadSettings(ev.settings); break;
       case 'calendar': if (ev.close) cal.close(); else cal.open(ev.date, ev.view); break;
       case 'calendar_changed': cal.refresh(); break;
       case 'auto': setAuto(ev.on); break;
       case 'approval_clear': pending = null; $('#approve').classList.remove('show'); break;
+      case 'thought': { const h = $('#hist'), p = document.createElement('p'); p.className = 'sys'; p.textContent = '💭 ' + ev.text.slice(-400); h.appendChild(p); h.scrollTop = h.scrollHeight; break; }
+      case 'mcp': window.__mcpRows = ev.servers; window.__renderMcp && window.__renderMcp(); break;
+      case 'setup': setupProgress(ev); break;
       case 'wake_status': S.wakeOk = ev.ok; S.wakeErr = ev.err || ''; hint();
         $('#hint-wake').textContent = ev.ok ? 'Wake word engine: online. Say “Hey JARVIS” to wake him.' : 'Wake word engine unavailable: ' + ev.err + ' You can still click the core or type to talk.'; break;
     }
@@ -449,12 +520,15 @@ window.__cal = cal;
    ===================================================================================== */
 function setMode(m) {
   scene.setMode(m);
+  document.body.classList.toggle('model', m === 'model');
+  $('#ghint').textContent = m === 'model' ? 'DRAG TO TURN · SCROLL TO ZOOM · ESC FOR CORE' : 'DRAG TO ROTATE · SCROLL OR +/- TO ZOOM · CLICK A SATELLITE · G FOR CORE';
+  if (m !== 'model') holoLabels([]);
   const on = m === 'globe';
   document.body.classList.toggle('globe', on);
   $('#b-globe').classList.toggle('on', on);
   $('#b-globe').setAttribute('aria-pressed', String(on));
   if (on) { globe.ensureGroups(); globeUI(); act('HOLOGRAM · EARTH'); }
-  else act('HOLOGRAM · CORE');
+  else if (m === 'core') act('HOLOGRAM · CORE');
 }
 $('#b-globe').onclick = () => setMode(scene.mode === 'globe' ? 'core' : 'globe');
 $('#g-core').onclick = () => setMode('core');
@@ -583,7 +657,22 @@ function placeLabel(el, anchor, cam, html) {
   el.style.transform = `translate(${Math.round(p.x + 30)}px,${Math.round(p.y - 8)}px)`;
 }
 let issCache = null, issT = 0;
+function holoLabels(list, cam) {
+  const box = $('#holo-labels');
+  // project, then nudge labels apart vertically so callouts never sit on top of each other
+  list = list.map((l) => { const p = l.pos.clone().project(cam); return { ...l, sx: (p.x * 0.5 + 0.5) * innerWidth, sy: (-p.y * 0.5 + 0.5) * innerHeight, z: p.z }; }).sort((a, b) => a.sy - b.sy);
+  for (let i = 1; i < list.length; i++) if (list[i].sy - list[i - 1].sy < 16 && Math.abs(list[i].sx - list[i - 1].sx) < 220) list[i].sy = list[i - 1].sy + 16;
+  while (box.children.length < list.length) { const d = document.createElement('div'); d.className = 'lbl'; box.appendChild(d); }
+  [...box.children].forEach((el, i) => {
+    const l = list[i];
+    if (!l) { el.style.transform = 'translate(-9999px,-9999px)'; return; }
+    if (l.z > 1) { el.style.transform = 'translate(-9999px,-9999px)'; return; }
+    if (el._t !== l.text) { el.textContent = l.text; el._t = l.text; }
+    el.style.transform = `translate(${Math.round(l.sx + 30)}px,${Math.round(l.sy - 8)}px)`;
+  });
+}
 function labels(cam) {
+  if (scene.mode === 'model') holoLabels(scene.holo.labelAnchors(), cam);
   if (scene.mode !== 'globe' && !document.body.classList.contains('globe')) { for (const id of ['#lb-sel', '#lb-iss', '#lb-home', '#lb-place']) $(id).style.transform = 'translate(-9999px,-9999px)'; return; }
   const s = globe.selected;
   placeLabel($('#lb-sel'), globe.labelAnchor(s), cam, s && s.st ? `${esc(s.name)}<small>${fmtNum(s.st.alt)} KM · ${s.st.vel.toFixed(2)} KM/S</small>` : '');
@@ -602,7 +691,18 @@ window.HUD.hologram = function (c) {
   const where = (s) => { const d = globe.describe(s); return d ? `${d.name}: altitude ${fmtNum(d.alt)} km, speed ${d.vel.toFixed(2)} km/s, over ${fmtLat(d.lat)} ${fmtLon(d.lon)}, orbit period ${d.period.toFixed(0)} minutes${d.live ? '' : ' (simulated orbit: live data unavailable)'}.` : ''; };
   switch (a) {
     case 'show_earth': need(); return `Holographic Earth online. ${globe.total} satellites ${globe.live ? 'tracked from live CelesTrak data' : 'shown (simulated: live data unavailable)'}.`;
-    case 'show_core': setMode('core'); return 'Back to the core.';
+    case 'show_core': case 'clear': setMode('core'); return 'Back to the core.';
+    case 'build': {
+      const r = scene.holo.build(c.spec || '');
+      if (r.startsWith('Hologram')) { setMode('model'); act('HOLOGRAM · ' + (scene.holo.title || 'MODEL').toUpperCase()); $('#ghint').textContent = 'DRAG TO TURN · SCROLL TO ZOOM · ESC FOR CORE'; }
+      return r;
+    }
+    case 'load_model': {
+      setMode('model');
+      scene.holo.loadModel(c.url, c.ext, c.name).then((r) => { act('HOLOGRAM · ' + r); toast(r, 4000); });
+      return `Loading ${c.name || 'the model'} onto the projector.`;
+    }
+    case 'explode': case 'assemble': scene.holo.setExplode(a === 'explode'); return a === 'explode' ? 'Exploded view.' : 'Reassembled.';
     case 'reset_view': need(); globe.select(null); globe.view.auto = true; scene.zoomBy(1 / 0.85); return 'View released.';
     case 'focus_place': case 'set_home': {
       need();

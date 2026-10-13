@@ -60,4 +60,12 @@ if not exist venv\wake3.flag (
   echo.
   timeout /t 6 >nul
 )
+if not exist venv\auto1.flag (
+  echo Installing JARVIS-3 power packages ^(automation, local voice, local speech^)...
+  venv\Scripts\python -m pip install -r requirements-auto.txt && echo ok> venv\auto1.flag
+)
+if not exist venv\auto1.flag (
+  echo NOTE: some optional power packages did not install. JARVIS will retry them when they are first needed.
+  timeout /t 4 >nul
+)
 exit /b 0

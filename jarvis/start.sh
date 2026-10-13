@@ -5,4 +5,5 @@ if [ ! -f venv/core4.flag ]; then
   venv/bin/pip install -q --upgrade pip && venv/bin/pip install -r requirements.txt && touch venv/core4.flag
 fi
 [ -f venv/wake3.flag ] || { venv/bin/pip install -r requirements-wake.txt && touch venv/wake3.flag; } || echo "Wake word packages failed to install; click the core or type to talk."
+[ -f venv/auto1.flag ] || { venv/bin/pip install -r requirements-auto.txt && touch venv/auto1.flag; } || echo "Some optional power packages failed; they will be retried when first needed."
 venv/bin/python jarvis.py

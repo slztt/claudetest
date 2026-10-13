@@ -1,0 +1,8 @@
+# JARVIS-3 power packages. Installed by the setup scripts; anything missing is installed automatically on first use.
+pywinauto; sys_platform == "win32"
+winocr; sys_platform == "win32"
+rapidocr-onnxruntime; sys_platform != "win32" and python_version < "3.13"
+playwright
+kokoro-onnx
+faster-whisper
+uv

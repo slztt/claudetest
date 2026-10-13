@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createGlobe, R as GLOBE_R } from './globe.js';
+import { createHolo } from './holo.js';
 
 const NOISE = /* glsl */ `
 vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
@@ -53,14 +54,14 @@ float snoise(vec3 v){
 
 // Per-state look. c = colour, speed = ring spin multiplier, energy = shimmer, bloom = glow strength, scale = core size
 const STATES = {
-  BOOT:       { c: 0x2fa8ff, speed: 0.5, energy: 0.2,  bloom: 0.9,  scale: 0.9 },
-  STANDBY:    { c: 0x2d90d8, speed: 0.35, energy: 0.12, bloom: 0.75, scale: 0.9 },
-  LISTENING:  { c: 0x55dcff, speed: 1.0, energy: 0.5,  bloom: 1.15, scale: 1.0 },
-  THINKING:   { c: 0xffb347, speed: 3.4, energy: 0.95, bloom: 1.35, scale: 1.02 },
-  SPEAKING:   { c: 0x8eeaff, speed: 1.8, energy: 0.7,  bloom: 1.3,  scale: 1.05 },
+  BOOT:       { c: 0x2fa8ff, speed: 0.3, energy: 0.2,  bloom: 0.9,  scale: 0.9 },
+  STANDBY:    { c: 0x2d90d8, speed: 0.25, energy: 0.12, bloom: 0.75, scale: 0.9 },
+  LISTENING:  { c: 0x55dcff, speed: 0.5, energy: 0.5,  bloom: 1.15, scale: 1.0 },
+  THINKING:   { c: 0xffb347, speed: 1.1, energy: 0.95, bloom: 1.35, scale: 1.02 },
+  SPEAKING:   { c: 0x8eeaff, speed: 0.7, energy: 0.7,  bloom: 1.3,  scale: 1.05 },
   MUTED:      { c: 0xff4d63, speed: 0.12, energy: 0.05, bloom: 0.7, scale: 0.88 },
-  CONNECTING: { c: 0x6f93ad, speed: 0.7, energy: 0.2,  bloom: 0.8,  scale: 0.92 },
-  SETUP:      { c: 0xffb347, speed: 0.5, energy: 0.2,  bloom: 0.9,  scale: 0.92 },
+  CONNECTING: { c: 0x6f93ad, speed: 0.35, energy: 0.2,  bloom: 0.8,  scale: 0.92 },
+  SETUP:      { c: 0xffb347, speed: 0.3, energy: 0.2,  bloom: 0.9,  scale: 0.92 },
 };
 
 export function createScene(canvas, opts = {}) {
@@ -95,7 +96,9 @@ export function createScene(canvas, opts = {}) {
   const tinted = []; // basic materials that follow the state colour
   let gridPulse = 1;
   let calm = false;                 // reduced motion (accessibility)
+  let spin = 0.45;                  // user's hologram speed (Configuration > Hologram speed)
   let modeTarget = 0, gm = 0;       // 0 = core, 1 = holographic Earth
+  let hmTarget = 0, hm = 0;         // generated hologram (object / model) on the projector
   let zoom = 1, zoomT = 1;          // globe camera distance multiplier
   let glitch = 0;
   const camLook = new THREE.Vector3(0, -0.2, 0);
@@ -344,6 +347,9 @@ export function createScene(canvas, opts = {}) {
   const globe = createGlobe({ color, pxRatio: renderer.getPixelRatio(), loadTLE: opts.loadTLE || (async () => ''), onUpdate: opts.onGlobe });
   globe.group.visible = false;
   scene.add(globe.group);
+  const holo = createHolo({ color });
+  holo.group.visible = false;
+  scene.add(holo.group);
 
   /* ---------- drifting dust ---------- */
   const DN = 900, dp = new Float32Array(DN * 3), ds = new Float32Array(DN);
@@ -437,7 +443,7 @@ export function createScene(canvas, opts = {}) {
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05);
     t += dt;
-    const dm = dt * (calm ? 0.25 : 1);                 // motion budget: reduced-motion slows everything that spins
+    const dm = dt * spin * (calm ? 0.25 : 1);                 // motion budget: reduced-motion slows everything that spins
     const k = 1 - Math.exp(-dt * 4);
     color.lerp(target, k);
     for (const m of tinted) m.color.copy(color).multiplyScalar(0.78);
@@ -452,7 +458,9 @@ export function createScene(canvas, opts = {}) {
     // core <-> Earth morph
     gm += (modeTarget - gm) * Math.min(1, dt * (calm ? 6 : 1.7));
     if (Math.abs(modeTarget - gm) < 1e-3) gm = modeTarget;
-    const coreK = Math.max(0, 1 - gm * 1.25);
+    hm += (hmTarget - hm) * Math.min(1, dt * (calm ? 6 : 1.7));
+    if (Math.abs(hmTarget - hm) < 1e-3) hm = hmTarget;
+    const coreK = Math.max(0, 1 - Math.max(gm, hm) * 1.25);
     const earthK = Math.min(1, Math.max(0, (gm - 0.15) / 0.85));
 
     coreU.uTime.value = shellU.uTime.value = floorU.uTime.value = dustU.uTime.value = beamU.uTime.value = sweepU.uTime.value = t;
@@ -465,20 +473,21 @@ export function createScene(canvas, opts = {}) {
     core.scale.setScalar(Math.max(1e-3, breathe * coreK));
     inner.scale.setScalar(Math.max(1e-3, breathe * coreK * (1 + 0.3 * Math.sin(t * 3) * P.energy)));
     lattice.scale.setScalar(Math.max(1e-3, coreK)); lattice2.scale.setScalar(Math.max(1e-3, coreK));
-    shell.scale.setScalar(Math.max(1e-3, 1 + gm * 0.55));
-    shellU.uAlpha.value = 0.85 * (1 - gm * 0.75);
+    const om = Math.max(gm, hm);
+    shell.scale.setScalar(Math.max(1e-3, 1 + om * 0.55));
+    shellU.uAlpha.value = 0.85 * (1 - om * 0.8);
     core.visible = inner.visible = lattice.visible = lattice2.visible = coreK > 0.002;
     lattice.rotation.y += dm * 0.25 * P.speed; lattice.rotation.x += dm * 0.11 * P.speed;
     lattice2.rotation.y -= dm * 0.18 * P.speed; lattice2.rotation.z += dm * 0.09 * P.speed;
     shell.rotation.y += dm * 0.07 * (0.4 + P.speed); shell.rotation.x = Math.sin(t * 0.2) * 0.15;
     shellU.uSize.value = 1.8 + P.energy * 1.2;
 
-    const ringK = 1 + 0.34 * gm;
+    const ringK = 1 + 0.34 * Math.max(gm, hm);
     for (const g of rings) {
       g.rotation.z += dm * g.userData.sp * P.speed;
       g.rotation.y += dm * 0.05 * P.speed * Math.sign(g.userData.sp);
       g.scale.setScalar(ringK);
-      g.children[0].material.opacity = g.children[0].userData.op * (1 - 0.68 * gm);   // step back so the Earth reads clearly
+      g.children[0].material.opacity = g.children[0].userData.op * (1 - 0.68 * Math.max(gm, hm));   // step back so the Earth reads clearly
     }
     plate.rotation.z += dm * 0.06 * (0.5 + P.speed * 0.5);
     plate.scale.setScalar(1 + 0.12 * gm);
@@ -488,7 +497,7 @@ export function createScene(canvas, opts = {}) {
 
     // drones orbit and leave a short trail
     for (const d of drones) {
-      const u = d.userData, a = t * u.sp * (calm ? 0.25 : 1) * (0.6 + P.speed * 0.4) + u.ph;
+      const u = d.userData; u.a = (u.a || u.ph) + dm * u.sp * (0.6 + P.speed * 0.4); const a = u.a;
       const r = u.r * (1 + 0.15 * gm);
       d.position.set(Math.cos(a) * r, Math.sin(a * 0.7) * 0.6 + Math.sin(u.tilt) * Math.sin(a) * r * 0.35, Math.sin(a) * r);
       d.rotation.x += dm * 1.3; d.rotation.y += dm * 0.9;
@@ -525,15 +534,22 @@ export function createScene(canvas, opts = {}) {
       globe.setReveal(earthK);
       globe.group.scale.setScalar(0.9 + 0.1 * earthK);
       globe.group.position.y = 0;
-      globe.update(dt, t, { calm });
+      globe.update(dt, t, { calm, spin });
+    }
+
+    // generated hologram
+    holo.group.visible = hm > 0.002;
+    if (holo.group.visible) {
+      holo.group.scale.setScalar(Math.max(1e-3, hm));
+      holo.update(dt, t, calm ? spin * 0.25 : spin);
     }
 
     // camera: intro push-in, slow drift, mouse parallax; zoom in Earth mode; ride-along in satellite view
     mouse.x += (mouse.tx - mouse.x) * 0.05; mouse.y += (mouse.ty - mouse.y) * 0.05;
     zoom += (zoomT - zoom) * Math.min(1, dt * 5);
-    let z = baseCam.z * (1 + (zoom - 1) * gm);
+    let z = baseCam.z * (1 + (zoom - 1) * Math.max(gm, hm));
     if (introOn) { intro = Math.min(1, intro + dt / 2.6); z += (1 - (1 - Math.pow(1 - intro, 3))) * 7; if (intro >= 1) introOn = false; }
-    const par = 1 - gm * 0.8, drift = calm ? 0 : 1;
+    const par = 1 - Math.max(gm, hm) * 0.8, drift = calm ? 0 : 1;
     camPos.set(baseCam.x + mouse.x * 0.8 * par + Math.sin(t * 0.17) * 0.12 * drift, baseCam.y - mouse.y * 0.45 * par + Math.cos(t * 0.13) * 0.08 * drift, z);
     lookTmp.set(0, -0.2 * (1 - gm), 0);
     const sc = globe.group.visible ? globe.satCamera() : null;
@@ -552,7 +568,7 @@ export function createScene(canvas, opts = {}) {
     root.rotation.x = -mouse.y * 0.12 * par;
 
     glitch = Math.max(0, glitch - dt * 1.6);
-    bloom.strength = (P.bloom * 0.62 + lvl * 0.45) * (1 - 0.3 * gm) * (1 - 0.45 * satBlend);
+    bloom.strength = (P.bloom * 0.62 + lvl * 0.45) * (1 - 0.3 * gm) * (1 - 0.45 * hm) * (1 - 0.45 * satBlend);
     fx.uniforms.uTime.value = t;
     fx.uniforms.uGlitch.value = calm ? 0 : glitch;
     fx.uniforms.uAb.value = calm ? 0.0008 : 0.0014 + lvl * 0.003 + (gridPulse < 0.3 ? 0.003 : 0) + glitch * 0.004;
@@ -573,14 +589,16 @@ export function createScene(canvas, opts = {}) {
     pulse,
     intro() { if (!calm) { introOn = true; intro = 0; } },
     setBoot(v) { fx.uniforms.uBoot.value = v; },
+    setSpin(v) { spin = Math.max(0.05, Math.min(1.5, +v || 0.45)); },
     setCalm(v) { calm = !!v; fx.uniforms.uCalm.value = calm ? 1 : 0; if (calm) introOn = false; },
     setMode(m) {
-      const t2 = m === 'globe' ? 1 : 0;
-      if (t2 !== modeTarget && !calm) glitch = 0.9;
-      modeTarget = t2;
+      const t2 = m === 'globe' ? 1 : 0, h2 = m === 'model' ? 1 : 0;
+      if ((t2 !== modeTarget || h2 !== hmTarget) && !calm) glitch = 0.9;
+      modeTarget = t2; hmTarget = h2;
       if (!t2) { globe.satView = false; zoomT = 1; }
     },
-    get mode() { return modeTarget ? 'globe' : 'core'; },
+    get mode() { return modeTarget ? 'globe' : hmTarget ? 'model' : 'core'; },
+    holo,
     zoomBy(f) { zoomT = Math.max(0.42, Math.min(1.9, zoomT * f)); },
     globe, camera,
   };

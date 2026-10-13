@@ -510,7 +510,7 @@ export function createGlobe({ color, pxRatio, loadTLE, onUpdate }) {
     if (view.tp != null) { view.pitch += (view.tp - view.pitch) * Math.min(1, dt * 2.6); if (Math.abs(view.tp - view.pitch) < 1e-3) view.tp = null; }
     view.yaw += view.vy; view.pitch = Math.max(-1.35, Math.min(1.35, view.pitch + view.vp));
     view.vy *= Math.pow(0.04, dt); view.vp *= Math.pow(0.04, dt);
-    if (view.auto && !opts.calm) view.yaw += dt * 0.05;
+    if (view.auto && !opts.calm) view.yaw += dt * 0.05 * (opts.spin ?? 0.45) / 0.45;
     earth.rotation.set(view.pitch, view.yaw, 0);
     atmo.rotation.copy(earth.rotation);
     for (const p of Object.values(pins)) if (p.visible) { const k = 1 + ((t * 0.8) % 1) * 1.6; p.userData.pulse.scale.setScalar(k); p.userData.pulse.material.opacity = 0.7 * (1 - ((t * 0.8) % 1)); }

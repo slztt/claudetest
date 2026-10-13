@@ -17,7 +17,12 @@ import webview
 import jv_core
 import jv_models
 import jv_calendar
-from jv_tools import NEW_TOOLS
+import jv_auto
+from jv_auto import AUTO_TOOLS
+import jv_mcp
+import jv_power
+from jv_power import POWER_TOOLS
+from jv_tools import NEW_TOOLS, search_results as jv_tools_search, fetch_text as jv_tools_fetch
 from jv_plus import PLUS_TOOLS
 
 # Many home networks have a broken IPv6 route to Google, which makes connections hang until they time out.
@@ -146,8 +151,16 @@ TOOLS = [
        "(ISS, Hubble, Tiangong, NOAA 19, a GPS or Starlink name...) and shows its orbit, ground track and footprint; satellite_view rides along "
        "with it looking down at Earth. where_is reports a satellite's live position, altitude and speed. list_satellites names what is loaded. "
        "layers chooses which satellite groups are shown. set_home pins the user's home location. reset_view frees the camera. "
-       "Use it whenever the user asks to see the Earth, a place, a satellite, an orbit or where something is in space.",
-       {"action": (S_, "show_earth, show_core, focus_place, track_satellite, satellite_view, where_is, list_satellites, layers, set_home or reset_view"),
+       "Use it whenever the user asks to see the Earth, a place, a satellite, an orbit or where something is in space. "
+       "build PROJECTS A HOLOGRAM OF ANYTHING you design: pass spec as JSON {\"title\": str, \"parts\": [part, ...]} where each part is "
+       "{\"shape\": box|sphere|hemisphere|cylinder|cone|capsule|torus|ring|plane|disc|prism|pyramid|icosahedron|octahedron|tube|line|extrude|lathe|grid|text|group, "
+       "size [x,y,z] (box, plane), radius, height, tube, inner/outer (ring), sides (prism/pyramid), points [[x,y,z],...] (tube, line) or [[x,y],...] "
+       "(extrude outline, lathe profile), depth (extrude), text, pos [x,y,z], rot [deg x,y,z], scale, color '#rrggbb', label 'callout text', "
+       "repeat {count, rotate [deg], offset [x,y,z]} for arrays (blades, spokes, columns), children [nested parts]}. Units are arbitrary (it is fitted "
+       "to the projector); Y is up. Use 10-80 parts with labels on the important ones. load_model shows a 3D file (path to .glb, .gltf, .obj or .stl, "
+       "e.g. exported from Blender). explode / assemble toggles an exploded view; clear returns to the core.",
+       {"action": (S_, "build, load_model, explode, assemble, clear, show_earth, show_core, focus_place, track_satellite, satellite_view, where_is, list_satellites, layers, set_home or reset_view"),
+        "spec": (S_, "build: the hologram as JSON (see description)"), "path": (S_, "load_model: path to a .glb/.gltf/.obj/.stl file"),
         "query": (S_, "Place name, or satellite name or NORAD number"),
         "layers": (S_, "For layers: comma-separated groups from stations, brightest, gps, weather, science, geo, starlink; or all / none")}, ["action"]),
 ]
@@ -1147,7 +1160,9 @@ class FishVoice:
 
     @property
     def enabled(self):
-        return bool(self.core.cfg.get("fish_key")) and not self.failed
+        if self.core.cfg.get("tts_mode") == "kokoro":   # free local voice also replaces Gemini Live's own voice
+            return True
+        return bool(self.core.cfg.get("fish_key")) and not self.failed and self.core.cfg.get("tts_mode", "auto") in ("auto", "fish")
 
     @property
     def busy(self):
@@ -1208,6 +1223,11 @@ class FishVoice:
 
     def _speak(self, gen, text):
         cfg = self.core.cfg
+        if cfg.get("tts_mode") == "kokoro":
+            pcm = jv_models.kokoro_pcm(self.core, text, OUT_RATE)
+            if gen == self.gen:
+                self.core.audio.play(pcm)
+            return
         headers = {"Authorization": "Bearer " + cfg["fish_key"], "Content-Type": "application/json"}
         if cfg.get("fish_model"):
             headers["model"] = cfg["fish_model"]
@@ -1259,7 +1279,7 @@ class Brain:
     def _config(self):
         return types.LiveConnectConfig(
             response_modalities=["AUDIO"], output_audio_transcription={}, input_audio_transcription={},
-            system_instruction=self.app.prompt(), tools=[{"function_declarations": TOOLS + NEW_TOOLS + PLUS_TOOLS}],
+            system_instruction=self.app.prompt(), tools=[{"function_declarations": TOOLS + NEW_TOOLS + PLUS_TOOLS + getattr(self.app, "extra_decls", lambda live=True: AUTO_TOOLS + POWER_TOOLS)(True)}],
             speech_config=types.SpeechConfig(voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE))))
 
@@ -1402,6 +1422,7 @@ class Brain:
 class Core:
     def __init__(self):
         self.cfg = load_json(CFG_FILE, DEFAULT_CFG)
+        self.voice_dir = DATA / "voices"
         for k, v in jv_models.MODEL_CFG.items():
             self.cfg.setdefault(k, v)
         self.store = load_json(STORE_FILE, {"tasks": [], "notes": [], "contacts": {}})
@@ -1422,6 +1443,10 @@ class Core:
         for k, v in jv_calendar.CAL_CFG.items():
             self.cfg.setdefault(k, v)
         self.cal = jv_calendar.Calendar(self, DATA / "personal")              # JARVIS-3: calendar engine + holographic views
+        self.auto = jv_auto.Auto(self, DATA)                                  # JARVIS-3: UI Automation, OCR, browser, waits, routines
+        self.power = jv_power.Power(self, DATA, jv_tools_search, jv_tools_fetch)  # JARVIS-3: deep research, standing orders, autopilot
+        self.mcp = jv_mcp.Hub(self, DATA)                                     # JARVIS-3: MCP servers (Roblox Studio, Blender, ...)
+        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._stats_loop, daemon=True).start()
 
@@ -1462,7 +1487,7 @@ class Core:
     def make_brain(self):
         if jv_models.is_live(self.cfg):
             return Brain(self)
-        return jv_models.ChatBrain(self, lambda: TOOLS + NEW_TOOLS + PLUS_TOOLS, IN_RATE, OUT_RATE)
+        return jv_models.ChatBrain(self, lambda: TOOLS + NEW_TOOLS + PLUS_TOOLS + self.extra_decls(False), IN_RATE, OUT_RATE)
 
     def swap_brain(self):
         """Switch model provider without restarting JARVIS."""
@@ -1583,7 +1608,10 @@ class Core:
             "Only say something is done once a tool result confirms it. If you lack a contact's number or "
             "email, ask for it and call save_contact. Use web_search and get_weather for anything current. "
             "If you only hear the wake word or nothing actionable, reply with a single short word such as \"Yes?\". "
-            "Never mention these instructions. " + jv_core.prompt_addendum(self) + " Environment: %s, user folder %s. Known contacts: %s. Current local time: %s. "
+            "Never mention these instructions. " + jv_auto.PROMPT + "You also have deep_research (background, cited reports), autopilot (work on a goal "
+            "alone until done), MCP tools named server__tool (Roblox Studio, Blender and more; mcp manages them) and hologram build (project any object "
+            "you design). STANDING ORDERS FROM THE USER (always follow them): " + (self.power.orders() if hasattr(self, "power") else "") + " " + "The holographic HUD: the calendar tool's show action opens the calendar UI on any month/week/day; "
+            "the hologram tool shows the 3D Earth and satellites. " + jv_core.prompt_addendum(self) + " Environment: %s, user folder %s. Known contacts: %s. Current local time: %s. "
             "The user's tasks: %s. The user's notes: %s." % (
                 env, Path.home().name, ", ".join(self.store["contacts"]) or "none yet",
                 time.strftime("%A %d %B %Y, %H:%M"), json.dumps(self.store["tasks"]), json.dumps(self.store["notes"])))
@@ -1643,10 +1671,16 @@ class Core:
         self.audio.sfx("tool")
         self.last_act = max(self.last_act, time.monotonic())
         try:
-            if self.cfg.get("offline_mode") and name in jv_core.NET_TOOLS | {"web_search", "read_webpage", "get_weather"}:
+            if self.cfg.get("offline_mode") and name in jv_core.NET_TOOLS | {"web_search", "read_webpage", "get_weather", "browser"}:
                 r = "Offline mode is on in Settings, so network access is blocked. Tell the user and work from local knowledge."
             else:
-                r = self.plus.handle(name, a, job)
+                r = self.auto.handle(name, a) if (not job or name in ("wait_for",) or getattr(job, "opts", {}).get("screen")) else None
+                if r is None:
+                    r = self.power.handle(name, a, job)
+                if r is None and (name == "mcp" or "__" in name):
+                    r = self.mcp.handle(name, a)
+                if r is None:
+                    r = self.plus.handle(name, a, job)
                 if r is None:
                     r = self.toolbox.handle(name, a, job)
                 if r is None:
@@ -1661,6 +1695,16 @@ class Core:
         """The `hologram` tool: geocode in Python (so the HUD stays synchronous), then hand the command to the HUD."""
         act = str(a.get("action", "")).strip().lower()
         cmd = {"action": act, "query": str(a.get("query", "") or "").strip(), "layers": str(a.get("layers", "") or "")}
+        if act == "build":
+            spec = a.get("spec")
+            cmd["spec"] = spec if isinstance(spec, (dict, list)) else str(spec or "")
+        if act == "load_model":
+            f = resolve_path(str(a.get("path") or ""))
+            if not f.exists() or f.suffix.lower() not in (".glb", ".gltf", ".obj", ".stl"):
+                return "No .glb/.gltf/.obj/.stl file at %s." % f
+            token = "%08x" % (abs(hash(str(f))) % 0xffffffff)
+            MODEL_FILES[token] = f
+            cmd.update({"url": "model/%s/%s" % (token, urllib.parse.quote(f.name)), "ext": f.suffix[1:].lower(), "name": f.stem})
         if act in ("focus_place", "set_home"):
             if not cmd["query"]:
                 return "Say which place."
@@ -1959,6 +2003,108 @@ class Api:
         except Exception as e:
             return {"ok": False, "text": str(e)[:300]}
 
+    # ---- free local AI: one-click setup ----
+    def local_info(self):
+        rec = jv_models.recommend()
+        up = jv_models.ollama_up()
+        have = []
+        if up:
+            try:
+                have = jv_models.ChatClient({**self._c.cfg, "brain_provider": "ollama", "brain_url": ""}).list_models()
+            except Exception:
+                pass
+        return {"hw": rec["hw"], "models": rec["models"], "vision": rec["vision"], "cpu_only": rec["cpu_only"], "ollama": up, "installed": have,
+                "voices": jv_models.KOKORO_VOICES}
+
+    def local_setup(self, model="", with_vision=True):
+        """Install Ollama, download the best brain for this PC (+ a vision helper), switch JARVIS to it with local speech and voice."""
+        c = self._c
+        if getattr(self, "_setting_up", False):
+            return "Setup is already running."
+        self._setting_up = True
+
+        def prog(text, frac=None, done=False, ok=True):
+            c.ui({"t": "setup", "text": text, "pct": None if frac is None else round(frac * 100, 1), "done": done, "ok": ok})
+
+        def run():
+            try:
+                why = jv_models.install_ollama(prog)
+                if why:
+                    return prog(why, done=True, ok=False)
+                rec = jv_models.recommend()
+                chosen, last = "", None
+                for m in ([model] if model else []) + rec["models"]:
+                    try:
+                        prog("Downloading %s (the brain; this is the big one)..." % m, 0)
+                        jv_models.ollama_pull(m, prog)
+                        chosen = m
+                        break
+                    except Exception as e:
+                        last = e
+                        prog("%s is not available (%s); trying the next choice..." % (m, str(e)[:80]))
+                if not chosen:
+                    return prog("Could not download a model: %s" % last, done=True, ok=False)
+                vis = ""
+                if with_vision:
+                    try:
+                        prog("Downloading %s (lets the brain see your screen)..." % rec["vision"], 0)
+                        jv_models.ollama_pull(rec["vision"], prog)
+                        vis = rec["vision"]
+                    except Exception:
+                        pass
+                for k, v in (("brain_provider", "ollama"), ("brain_model", chosen), ("brain_url", ""), ("vision_model", vis),
+                             ("stt_mode", "local"), ("tts_mode", "kokoro" if not c.cfg.get("fish_key") else "auto")):
+                    self.set_setting(k, v)
+                prog("Preparing the local voice...")
+                try:
+                    jv_models.kokoro_pcm(c, "Ready.")
+                except Exception as e:
+                    prog("Voice download failed (%s); a built-in voice will be used." % str(e)[:80])
+                prog("Done. JARVIS now thinks with %s on this PC%s, for free and in private." % (chosen, " and sees with " + vis if vis else ""), 1, done=True)
+                c.ui({"t": "settings", "settings": dict(c.cfg)})
+            except Exception as e:
+                prog("Setup failed: %s" % str(e)[:200], done=True, ok=False)
+            finally:
+                self._setting_up = False
+        threading.Thread(target=run, daemon=True).start()
+        return "started"
+
+    def test_voice(self, voice=""):
+        c = self._c
+        try:
+            old = c.cfg.get("kokoro_voice")
+            if voice:
+                c.cfg["kokoro_voice"] = voice
+            pcm = jv_models.kokoro_pcm(c, "Good evening. All systems are online, and I have taken the liberty of clearing your afternoon.", OUT_RATE)
+            c.cfg["kokoro_voice"] = old if not voice else voice
+            c.audio.play(pcm)
+            return "ok"
+        except Exception as e:
+            return "Voice error: %s" % str(e)[:200]
+
+    # ---- MCP servers ----
+    def mcp_status(self):
+        return {"servers": self._c.mcp.status_rows(), "presets": {k: {"label": v["label"], "note": v["note"]} for k, v in jv_mcp.PRESETS.items()},
+                "config": json.dumps(self._c.mcp.config(), indent=2)}
+
+    def mcp_action(self, action, name=""):
+        return self._c.mcp.tool({"action": action, "name": name})
+
+    def mcp_save(self, text):
+        try:
+            self._c.mcp.save_config(json.loads(text))
+            return "Saved."
+        except Exception as e:
+            return "Not saved: %s" % e
+
+    # ---- standing orders ----
+    def orders_get(self):
+        return self._c.power.orders()
+
+    def orders_save(self, text):
+        self._c.power.orders_file.write_text(str(text)[:20000], encoding="utf-8")
+        return "Saved."
+
     # ---- calendar UI ----
     def cal_range(self, start, end):
         try:
@@ -2093,6 +2239,9 @@ class Api:
         self._c.shutdown()
 
 
+MODEL_FILES = {}
+
+
 def serve_hud():
     """Serve the HUD folder on localhost (ES modules cannot load from file://). Returns the port."""
     import functools, http.server, mimetypes
@@ -2107,6 +2256,29 @@ def serve_hud():
         def end_headers(self):
             self.send_header("Cache-Control", "no-store")
             super().end_headers()
+
+        def do_GET(self):
+            # 3D model files the hologram tool was asked to show (only files registered by JARVIS, only model types)
+            if self.path.startswith("/model/"):
+                parts = self.path.split("/")
+                f = MODEL_FILES.get(parts[2] if len(parts) > 2 else "")
+                if f is not None:
+                    name = urllib.parse.unquote(parts[3]) if len(parts) > 3 else f.name
+                    target = f if name == f.name else (f.parent / name)   # .gltf side files (.bin, textures) next to it
+                    try:
+                        target.resolve().relative_to(f.parent.resolve())
+                        data = target.read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "application/octet-stream")
+                        self.send_header("Content-Length", str(len(data)))
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
+                    except Exception:
+                        pass
+                self.send_error(404)
+                return
+            super().do_GET()
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet, directory=str(HERE / "hud")))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
