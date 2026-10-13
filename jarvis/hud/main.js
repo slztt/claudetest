@@ -1,11 +1,22 @@
 import { createScene } from './scene.js';
+import { GROUPS } from './globe.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const api = () => (window.pywebview && window.pywebview.api) || null;
 const call = (fn, ...a) => { try { const p = api(); return p ? p[fn](...a) : Promise.resolve(null); } catch (e) { return Promise.resolve(null); } };
 
-const scene = createScene($('#gl'));
+/* Satellite elements: through the Python bridge (cached, CelesTrak-friendly); straight from CelesTrak in a plain browser. */
+async function loadTLE(group) {
+  if (api()) return (await call('get_tle', group)) || '';
+  const g = { stations: 'stations', brightest: 'visual', gps: 'gps-ops', weather: 'weather', science: 'science', geo: 'geo', starlink: 'starlink' }[group];
+  try {
+    const r = await fetch(`https://celestrak.org/NORAD/elements/gp.php?GROUP=${g}&FORMAT=tle`);
+    return r.ok ? await r.text() : '';
+  } catch (e) { return ''; }
+}
+const scene = createScene($('#gl'), { loadTLE, onGlobe: () => globeUI(), onFrame: (cam) => labels(cam) });
+const globe = scene.globe;
 const COLORS = {
   STANDBY: '45,144,216', LISTENING: '85,220,255', THINKING: '255,179,71', SPEAKING: '142,234,255',
   MUTED: '255,77,99', CONNECTING: '111,147,173', SETUP: '255,179,71', BOOT: '47,168,255',
@@ -55,6 +66,7 @@ function setState(name) {
   root.setProperty('--accent', `rgb(${rgb})`);
   $('#st-name').textContent = LABEL[name] || name;
   scene.setState(name);
+  document.body.dataset.state = name;
   hint();
 }
 function hint() {
@@ -112,7 +124,7 @@ function sub(id, text) {
 }
 function log(who, text) {
   if (who === 'you') sub('#s-you', text);
-  else if (who === 'jarvis') sub('#s-jv', text);
+  else if (who === 'jarvis') { sub('#s-jv', text); say('JARVIS: ' + text); }
   else toast(text, 6000);
   const h = $('#hist');
   const p = document.createElement('p');
@@ -122,6 +134,7 @@ function log(who, text) {
   while (h.children.length > 80) h.removeChild(h.firstChild);
   h.scrollTop = h.scrollHeight;
 }
+function say(text) { const r = $('#sr-say'); r.textContent = ''; setTimeout(() => { r.textContent = text; }, 30); }
 let toastT;
 function toast(text, ms) {
   const t = $('#toast');
@@ -182,6 +195,8 @@ function loadSettings(s) {
   $('#s-conf').checked = !!s.confirm_risky;
   $('#s-fish').value = s.fish_key || '';
   voiceNote();
+  brainFields();
+  applyA11y();
 }
 const put = (k, v) => { S.settings[k] = v; call('set_setting', k, v); };
 $('#s-key').addEventListener('change', (e) => put('api_key', e.target.value.trim()));
@@ -198,6 +213,81 @@ function voiceNote() {
   n.textContent = on ? 'Voice: J.A.R.V.I.S. (MCU) via Fish Audio.' : 'Voice: built-in. Add a Fish Audio key to give him the film voice.';
 }
 $('#s-test').onclick = () => call('test_audio');
+
+/* ---------- AI model (any provider) ---------- */
+let PROVIDERS = [
+  { id: 'gemini-live', label: 'Gemini Live · native voice', needs_key: true, model: '', url: '' },
+  { id: 'anthropic', label: 'Anthropic · Claude', needs_key: true, model: 'claude-sonnet-5-5', url: 'https://api.anthropic.com/v1' },
+  { id: 'openai', label: 'OpenAI', needs_key: true, model: 'gpt-4.1-mini', url: 'https://api.openai.com/v1' },
+  { id: 'ollama', label: 'Ollama · local', needs_key: false, model: 'llama3.1', url: 'http://localhost:11434/v1' },
+  { id: 'custom', label: 'Custom OpenAI-compatible', needs_key: false, model: '', url: '' },
+];
+function fillProviders(list) {
+  if (list && list.length) PROVIDERS = list;
+  $('#s-prov').innerHTML = PROVIDERS.map((p) => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('');
+  $('#s-prov').value = S.settings.brain_provider || 'gemini-live';
+}
+function brainFields() {
+  const s = S.settings, id = s.brain_provider || 'gemini-live', p = PROVIDERS.find((x) => x.id === id) || PROVIDERS[0];
+  if ($('#s-prov').options.length !== PROVIDERS.length) fillProviders();
+  $('#s-prov').value = id;
+  const live = id === 'gemini-live';
+  $('#brain-fields').hidden = live;
+  $('#s-model').value = s.brain_model || ''; $('#s-model').placeholder = p.model || 'model name';
+  $('#s-bkey').value = s.brain_key || '';
+  $('#s-bkey').placeholder = p.needs_key ? (id === 'gemini' ? 'leave empty to use the Gemini key below' : 'paste the provider API key') : 'not needed for local models';
+  $('#s-burl').value = s.brain_url || ''; $('#s-burl').placeholder = p.url || 'https://your-server/v1';
+  $('#s-stt').value = s.stt_mode || 'auto'; $('#s-tts').value = s.tts_mode || 'auto';
+  $('#l-gkey').textContent = live ? 'Gemini API key' : 'Gemini API key · optional (voice input, research)';
+  $('#brain-note').textContent = live
+    ? 'Gemini Live hears and speaks natively. Pick another provider to use Claude, GPT, Llama, Mistral, DeepSeek, Grok, a local Ollama model or any OpenAI-compatible server; every tool and the hologram keep working.'
+    : `${p.label}: text and tools go to ${s.brain_url || p.url || 'your server'}. The wake word stays on this PC; speech is transcribed and spoken as chosen below.`;
+}
+function setBrain(b) { if (b) $('#brain-name').textContent = `${b.label}${b.model ? ' · ' + b.model : ''}`; }
+$('#s-prov').addEventListener('change', (e) => {
+  const id = e.target.value;
+  put('brain_url', ''); put('brain_model', ''); put('brain_provider', id);
+  brainFields();
+});
+[['#s-model', 'brain_model'], ['#s-bkey', 'brain_key'], ['#s-burl', 'brain_url']].forEach(([q, k]) => {
+  $(q).addEventListener('change', (e) => { put(k, e.target.value.trim()); brainFields(); });
+  $(q).addEventListener('keydown', (e) => e.stopPropagation());
+});
+$('#s-stt').addEventListener('change', (e) => put('stt_mode', e.target.value));
+$('#s-tts').addEventListener('change', (e) => put('tts_mode', e.target.value));
+$('#s-list').onclick = async () => {
+  const n = $('#brain-note'); n.textContent = 'Asking the provider which models this key can use…';
+  const r = await call('list_models');
+  if (!r) { n.textContent = 'Model listing needs the JARVIS app (not available in browser preview).'; return; }
+  if (!r.ok) { n.textContent = r.error; return; }
+  $('#s-models').innerHTML = r.models.map((m) => `<option value="${esc(m)}">`).join('');
+  n.textContent = `${r.models.length} models available. Click the Model box to pick one.`;
+  $('#s-model').focus();
+};
+$('#s-tb').onclick = async () => {
+  const n = $('#brain-note'); n.textContent = 'Testing…';
+  const r = await call('test_brain');
+  n.textContent = r ? (r.ok ? '✓ ' : '✗ ') + r.text : 'Testing needs the JARVIS app.';
+};
+
+/* ---------- accessibility ---------- */
+const mqCalm = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false, addEventListener() {} };
+function applyA11y() {
+  const s = S.settings || {};
+  const calm = !!s.ui_reduce_motion || mqCalm.matches;
+  document.body.classList.toggle('calm', calm);
+  document.body.classList.toggle('contrast', !!s.ui_contrast);
+  document.body.classList.toggle('nocaps', s.ui_captions === false);
+  document.documentElement.style.setProperty('--ui-scale', s.ui_scale || 1);
+  scene.setCalm(calm);
+  $('#s-calm').checked = !!s.ui_reduce_motion; $('#s-contrast').checked = !!s.ui_contrast;
+  $('#s-caps').checked = s.ui_captions !== false; $('#s-scale').value = s.ui_scale || 1;
+}
+mqCalm.addEventListener && mqCalm.addEventListener('change', applyA11y);
+$('#s-calm').addEventListener('change', (e) => { put('ui_reduce_motion', e.target.checked); applyA11y(); });
+$('#s-contrast').addEventListener('change', (e) => { put('ui_contrast', e.target.checked); applyA11y(); });
+$('#s-caps').addEventListener('change', (e) => { put('ui_captions', e.target.checked); applyA11y(); });
+$('#s-scale').addEventListener('input', (e) => { put('ui_scale', +e.target.value); applyA11y(); });
 $('#s-done').onclick = () => {
   const k = $('#s-key'); if (k.value.trim() !== (S.settings.api_key || '')) put('api_key', k.value.trim());
   const f = $('#s-fish'); if (f.value.trim() !== (S.settings.fish_key || '')) { put('fish_key', f.value.trim()); voiceNote(); }
@@ -226,15 +316,45 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === 'Escape') { e.preventDefault(); answer(false); }
     return;
   }
-  if (e.key === 'Escape' && document.activeElement !== cmd) { if (setEl.classList.contains('open')) openSettings(false); else call('stop'); }
+  const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
+  if (e.key === 'Escape' && document.activeElement !== cmd) {
+    if (setEl.classList.contains('open')) openSettings(false);
+    else if (scene.mode === 'globe' && globe.satView) { globe.satView = false; }
+    else if (scene.mode === 'globe' && globe.selected) { globe.select(null); }
+    else call('stop');
+  }
+  else if (!typing && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); setMode(scene.mode === 'globe' ? 'core' : 'globe'); }
+  else if (!typing && scene.mode === 'globe' && globeKey(e)) e.preventDefault();
   else if (e.key === 'F11') { e.preventDefault(); call('fullscreen'); }
   else if ((e.key === '/' || e.key === 't') && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'SELECT') { e.preventDefault(); cmd.focus(); }
 });
-// click the core to talk without the wake word
-$('#gl').addEventListener('click', (e) => {
+// pointer: click the core to talk; in Earth mode drag to rotate and click a satellite to lock on
+const gl = $('#gl');
+let drag = null;
+gl.addEventListener('pointerdown', (e) => {
+  drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, moved: 0 };
+  if (scene.mode === 'globe') { gl.setPointerCapture(e.pointerId); document.body.classList.add('dragging'); }
+});
+gl.addEventListener('pointermove', (e) => {
+  if (!drag || scene.mode !== 'globe') return;
+  const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly;
+  drag.lx = e.clientX; drag.ly = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
+  if (!globe.satView) globe.drag(dx, dy);
+});
+gl.addEventListener('pointerup', (e) => {
+  document.body.classList.remove('dragging');
+  if (!drag) return;
+  const click = drag.moved < 6; drag = null;
+  if (!click) return;
+  if (scene.mode === 'globe') {
+    const s = globe.pick(scene.camera, e.clientX, e.clientY, innerWidth, innerHeight, 16);
+    if (s) { globe.select(s); act('TARGET LOCK · ' + s.name); scene.pulse(0.35); }
+    return;
+  }
   const r = Math.hypot(e.clientX - innerWidth / 2, e.clientY - innerHeight * 0.46);
   if (r < Math.min(innerWidth, innerHeight) * 0.22) call('wake');
 });
+gl.addEventListener('wheel', (e) => { if (scene.mode === 'globe') { e.preventDefault(); scene.zoomBy(e.deltaY > 0 ? 1.1 : 0.9); } }, { passive: false });
 window.addEventListener('mousemove', (e) => scene.setMouse(e.clientX / innerWidth * 2 - 1, e.clientY / innerHeight * 2 - 1));
 
 /* ---------- clock ---------- */
@@ -259,6 +379,7 @@ window.HUD = {
       case 'wake': scene.pulse(1); $('#flash').classList.remove('go'); void $('#flash').offsetWidth; $('#flash').classList.add('go'); break;
       case 'pulse': scene.pulse(0.6); break;
       case 'approval': showApproval(ev); break;
+      case 'brain': setBrain(ev); break;
       case 'auto': setAuto(ev.on); break;
       case 'approval_clear': pending = null; $('#approve').classList.remove('show'); break;
       case 'wake_status': S.wakeOk = ev.ok; S.wakeErr = ev.err || ''; hint();
@@ -272,11 +393,17 @@ const BOOT = ['CORE REACTOR ............ ONLINE', 'NEURAL LINK ............. EST
 async function boot(initial) {
   const pre = $('#boot-log');
   BOOT.forEach((l, i) => { const s = document.createElement('span'); s.textContent = l; s.style.animationDelay = (0.5 + i * 0.28) + 's'; pre.appendChild(s); });
-  await new Promise((r) => setTimeout(r, 2500));
+  await new Promise((r) => setTimeout(r, document.body.classList.contains('calm') || mqCalm.matches ? 600 : 2500));
   $('#boot').classList.add('gone');
   document.body.classList.add('ready');
   scene.intro();
-  if (initial) { loadSettings(initial.settings); lists(initial.lists); setState(initial.state); setTheme((initial.settings || {}).theme); }
+  if (initial) {
+    fillProviders(initial.providers); S.settings = initial.settings || {};
+    loadSettings(initial.settings); lists(initial.lists); setState(initial.state); setTheme((initial.settings || {}).theme);
+    setBrain(initial.brain);
+    const st = initial.settings || {};
+    if (st.home_lat !== '' && st.home_lat != null && st.home_lon !== '' && st.home_lon != null) globe.setPin('home', { name: st.home_name || 'Home', lat: +st.home_lat, lon: +st.home_lon });
+  }
 }
 
 async function start() {
@@ -302,9 +429,207 @@ function demo() {
     HUD.on({ t: 'log', who: 'jarvis', text: 'Chrome, mostly. Eleven tabs of it, I’m afraid.' });
     HUD.on({ t: 'wake_status', ok: true });
   }, 3200);
-  return { state: 'STANDBY', settings: { api_key: '', volume: 1, wake_threshold: 0.5, barge_in: false, confirm_risky: true, fish_key: '', mic: '', speaker: '' },
+  return { state: 'STANDBY', brain: { label: 'Preview', model: 'no model connected' },
+    settings: { api_key: '', volume: 1, wake_threshold: 0.5, barge_in: false, confirm_risky: true, fish_key: '', mic: '', speaker: '', brain_provider: 'gemini-live', stt_mode: 'auto', tts_mode: 'auto', ui_scale: 1, ui_captions: true },
     lists: { tasks: ['Renew passport', 'Book dentist'], notes: ['Wi-Fi password is on the fridge'], contacts: [['Mum', '07700 900123']], timers: [{ label: 'Tea', left: 142 }] } };
 }
+
+/* =====================================================================================
+   Holographic Earth: mode switch, panel, labels, keyboard, and the `hologram` tool
+   ===================================================================================== */
+function setMode(m) {
+  scene.setMode(m);
+  const on = m === 'globe';
+  document.body.classList.toggle('globe', on);
+  $('#b-globe').classList.toggle('on', on);
+  $('#b-globe').setAttribute('aria-pressed', String(on));
+  if (on) { globe.ensureGroups(); globeUI(); act('HOLOGRAM · EARTH'); }
+  else act('HOLOGRAM · CORE');
+}
+$('#b-globe').onclick = () => setMode(scene.mode === 'globe' ? 'core' : 'globe');
+$('#g-core').onclick = () => setMode('core');
+
+const fmtLat = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'N' : 'S'}`;
+const fmtLon = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'E' : 'W'}`;
+const fmtNum = (v) => Math.round(v).toLocaleString('en-GB');
+
+function layerChips() {
+  const c = globe.counts();
+  $('#g-layers').innerHTML = Object.entries(GROUPS).map(([k, g]) =>
+    `<button class="gchip" data-g="${k}" aria-pressed="${g.on}" style="color:#${g.color.toString(16).padStart(6, '0')}"><i></i><span style="color:var(--txt)">${g.label}</span>${c[k] ? `<em>${c[k]}</em>` : ''}</button>`).join('');
+}
+$('#g-layers').addEventListener('click', (e) => {
+  const b = e.target.closest('.gchip'); if (!b) return;
+  const k = b.dataset.g; globe.setGroup(k, !GROUPS[k].on); layerChips();
+});
+
+function globeUI() {
+  layerChips();
+  $('#g-count').textContent = fmtNum(globe.total);
+  $('#g-src').textContent = globe.total ? (globe.live ? 'LIVE · CELESTRAK' : 'SIMULATED · OFFLINE') : 'LOADING';
+  const d = globe.describe(globe.selected);
+  $('#g-card').hidden = !d;
+  $('#gc-view').classList.toggle('on', globe.satView); $('#gc-view').setAttribute('aria-pressed', String(globe.satView));
+  $('#gc-follow').classList.toggle('on', !!globe.view.follow); $('#gc-follow').setAttribute('aria-pressed', String(!!globe.view.follow));
+  if (d) {
+    $('#gc-name').textContent = d.name; $('#gc-name').style.color = d.color;
+    $('#gc-sub').textContent = `NORAD ${d.norad} · ${d.group.toUpperCase()}${d.live ? '' : ' · SIMULATED'}`;
+  }
+  liveCard();
+}
+function liveCard() {
+  const d = globe.describe(globe.selected);
+  const now = new Date();
+  $('#g-utc').textContent = now.toISOString().slice(11, 16);
+  const sun = globe.sun; $('#g-sun').textContent = `${Math.round(sun.lat)}°,${Math.round(sun.lon)}°`;
+  if (!d) return;
+  $('#gc-alt').textContent = fmtNum(d.alt) + ' km'; $('#gc-vel').textContent = d.vel.toFixed(2) + ' km/s';
+  $('#gc-lat').textContent = fmtLat(d.lat); $('#gc-lon').textContent = fmtLon(d.lon);
+  $('#gc-per').textContent = d.period.toFixed(1) + ' min'; $('#gc-inc').textContent = d.inc.toFixed(1) + '°';
+}
+setInterval(() => { if (scene.mode === 'globe') liveCard(); }, 1000);
+
+$('#gc-view').onclick = () => { globe.satView = !globe.satView; };
+$('#gc-follow').onclick = () => { const s = globe.selected; if (s) { globe.view.follow = !globe.view.follow; if (globe.view.follow) globe.select(s); globeUI(); } };
+$('#gc-free').onclick = () => globe.select(null);
+
+// satellite search (combobox)
+let results = [], ri = -1;
+function renderResults() {
+  const box = $('#g-results');
+  box.innerHTML = results.map((s, i) => `<li role="option" id="gr-${i}" aria-selected="${i === ri}" data-i="${i}"><span>${esc(s.name)}</span><small>${esc(GROUPS[s.group].label)}</small></li>`).join('');
+  $('#g-search').setAttribute('aria-expanded', String(results.length > 0));
+  if (ri >= 0) $('#g-search').setAttribute('aria-activedescendant', 'gr-' + ri); else $('#g-search').removeAttribute('aria-activedescendant');
+}
+function choose(s) { if (!s) return; globe.select(s); results = []; ri = -1; renderResults(); $('#g-search').value = ''; act('TARGET LOCK · ' + s.name); say('Tracking ' + s.name); }
+$('#g-search').addEventListener('input', (e) => { results = globe.search(e.target.value); ri = results.length ? 0 : -1; renderResults(); });
+$('#g-search').addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (e.key === 'ArrowDown') { ri = Math.min(results.length - 1, ri + 1); renderResults(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { ri = Math.max(0, ri - 1); renderResults(); e.preventDefault(); }
+  else if (e.key === 'Enter') choose(results[ri] || globe.find(e.target.value));
+  else if (e.key === 'Escape') { results = []; renderResults(); e.target.blur(); }
+});
+$('#g-results').addEventListener('click', (e) => { const li = e.target.closest('li'); if (li) choose(results[+li.dataset.i]); });
+
+// places
+async function geocode(q) {
+  if (api()) return call('geocode', q);
+  try {
+    const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&format=json&name=' + encodeURIComponent(q));
+    const j = await r.json(); const x = (j.results || [])[0];
+    return x ? { name: [x.name, x.admin1, x.country].filter(Boolean).join(', '), lat: x.latitude, lon: x.longitude } : null;
+  } catch (e) { return null; }
+}
+let lastPlace = null;
+function flyTo(p, which = 'place') {
+  lastPlace = p; globe.select(null); globe.setPin(which, p); globe.focusLatLon(p.lat, p.lon); scene.zoomBy(0.85);
+  act(`FOCUS · ${p.name}`); say(`Showing ${p.name}`);
+}
+$('#g-place').addEventListener('keydown', async (e) => {
+  e.stopPropagation();
+  if (e.key !== 'Enter' || !e.target.value.trim()) return;
+  const p = await geocode(e.target.value.trim());
+  if (p) { flyTo(p); e.target.value = ''; } else toast('No such place found', 3000);
+});
+$('#g-home').onclick = () => { const h = globe.pinInfo.home; if (h) flyTo(h, 'home'); else toast('No home set yet · fly to a place, then Set as home', 4000); };
+$('#g-sethome').onclick = () => {
+  const p = lastPlace; if (!p) { toast('Fly to a place first', 3000); return; }
+  globe.setPin('home', p); put('home_name', p.name); put('home_lat', p.lat); put('home_lon', p.lon); act('HOME · ' + p.name);
+};
+$('#g-sunbtn').onclick = () => { globe.select(null); globe.focusLatLon(globe.sun.lat, globe.sun.lon); act('FOCUS · SUBSOLAR POINT'); };
+
+function globeKey(e) {
+  const step = e.shiftKey ? 0.6 : 0.25;
+  switch (e.key) {
+    case 'ArrowLeft': globe.nudge(-step, 0); return true;
+    case 'ArrowRight': globe.nudge(step, 0); return true;
+    case 'ArrowUp': globe.nudge(0, step); return true;
+    case 'ArrowDown': globe.nudge(0, -step); return true;
+    case '+': case '=': scene.zoomBy(0.88); return true;
+    case '-': case '_': scene.zoomBy(1.14); return true;
+    case 'v': case 'V': if (globe.selected) globe.satView = !globe.satView; return true;
+    case '[': case ']': {
+      const pool = cyclePool(); if (!pool.length) return true;
+      const i = pool.indexOf(globe.selected);
+      choose(pool[(i + (e.key === ']' ? 1 : -1) + pool.length) % pool.length]); return true;
+    }
+  }
+  return false;
+}
+function cyclePool() {
+  // notable satellites first, then everything visible
+  const pri = ['ISS', 'TIANHE', 'HST', 'NOAA', 'GOES', 'METEOSAT', 'TERRA', 'AQUA', 'LANDSAT', 'SENTINEL', 'GPS'];
+  const all = [];
+  for (const p of pri) for (const s of globe.search(p, 40)) if (!all.includes(s)) all.push(s);
+  return all.length ? all : globe.search('A', 50);
+}
+
+// HTML labels that follow 3D anchors (selected satellite, ISS, home, focused place)
+function placeLabel(el, anchor, cam, html) {
+  const p = anchor && scene.mode === 'globe' ? globe.screenOf(cam, anchor, innerWidth, innerHeight) : null;
+  if (!p) { el.style.transform = 'translate(-9999px,-9999px)'; return; }
+  if (el._html !== html) { el.innerHTML = html; el._html = html; }
+  el.style.transform = `translate(${Math.round(p.x + 30)}px,${Math.round(p.y - 8)}px)`;
+}
+let issCache = null, issT = 0;
+function labels(cam) {
+  if (scene.mode !== 'globe' && !document.body.classList.contains('globe')) { for (const id of ['#lb-sel', '#lb-iss', '#lb-home', '#lb-place']) $(id).style.transform = 'translate(-9999px,-9999px)'; return; }
+  const s = globe.selected;
+  placeLabel($('#lb-sel'), globe.labelAnchor(s), cam, s && s.st ? `${esc(s.name)}<small>${fmtNum(s.st.alt)} KM · ${s.st.vel.toFixed(2)} KM/S</small>` : '');
+  if (performance.now() - issT > 2000) { issCache = globe.find('ISS'); issT = performance.now(); }
+  const iss = issCache && issCache !== s ? issCache : null;
+  placeLabel($('#lb-iss'), globe.labelAnchor(iss), cam, iss ? 'ISS<small>CREWED</small>' : '');
+  const h = globe.pinInfo.home, pl = globe.pinInfo.place;
+  placeLabel($('#lb-home'), globe.pinAnchor('home'), cam, h ? `HOME<small>${esc(h.name.split(',')[0].toUpperCase())}</small>` : '');
+  placeLabel($('#lb-place'), globe.pinAnchor('place'), cam, pl ? `${esc(pl.name.split(',')[0].toUpperCase())}<small>${fmtLat(pl.lat)} ${fmtLon(pl.lon)}</small>` : '');
+}
+
+/** The `hologram` tool, called synchronously from Python (any model can drive the HUD). Returns a sentence. */
+window.HUD.hologram = function (c) {
+  const a = (c && c.action) || '';
+  const need = () => { if (scene.mode !== 'globe') setMode('globe'); };
+  const where = (s) => { const d = globe.describe(s); return d ? `${d.name}: altitude ${fmtNum(d.alt)} km, speed ${d.vel.toFixed(2)} km/s, over ${fmtLat(d.lat)} ${fmtLon(d.lon)}, orbit period ${d.period.toFixed(0)} minutes${d.live ? '' : ' (simulated orbit: live data unavailable)'}.` : ''; };
+  switch (a) {
+    case 'show_earth': need(); return `Holographic Earth online. ${globe.total} satellites ${globe.live ? 'tracked from live CelesTrak data' : 'shown (simulated: live data unavailable)'}.`;
+    case 'show_core': setMode('core'); return 'Back to the core.';
+    case 'reset_view': need(); globe.select(null); globe.view.auto = true; scene.zoomBy(1 / 0.85); return 'View released.';
+    case 'focus_place': case 'set_home': {
+      need();
+      const p = { name: c.name || c.query, lat: +c.lat, lon: +c.lon };
+      if (!isFinite(p.lat) || !isFinite(p.lon)) return 'No coordinates for that place.';
+      flyTo(p, a === 'set_home' ? 'home' : 'place');
+      return `${a === 'set_home' ? 'Home set to' : 'Showing'} ${p.name} (${fmtLat(p.lat)}, ${fmtLon(p.lon)}).`;
+    }
+    case 'track_satellite': case 'satellite_view': case 'where_is': {
+      if (!globe.total) { need(); return 'Satellite data is still loading; try again in a moment.'; }
+      const s = globe.find(c.query);
+      if (!s) return `No satellite matching "${c.query}" among the ${globe.total} loaded. Try another name or enable more layers.`;
+      if (a !== 'where_is' || scene.mode === 'globe') { need(); globe.select(s); }
+      if (a === 'satellite_view') globe.satView = true;
+      return (a === 'satellite_view' ? 'Riding along with ' : a === 'track_satellite' ? 'Tracking ' : '') + where(s);
+    }
+    case 'list_satellites': {
+      const cnt = globe.counts();
+      const groups = Object.entries(GROUPS).map(([k, g]) => `${g.label} ${g.on ? (cnt[k] || 0) : 'off'}`).join(', ');
+      const notable = cyclePool().slice(0, 12).map((s) => s.name).join(', ');
+      return `Layers: ${groups}. Notable: ${notable || 'none loaded yet'}.`;
+    }
+    case 'layers': {
+      need();
+      const want = String(c.layers || '').toLowerCase().split(/[,\s]+/).filter(Boolean);
+      const all = want.includes('all'), none = want.includes('none');
+      for (const k of Object.keys(GROUPS)) {
+        const on = all ? k !== 'starlink' || want.includes('starlink') : none ? false : want.includes(k) || (k === 'brightest' && want.includes('visual'));
+        globe.setGroup(k, on);
+      }
+      layerChips();
+      return 'Layers now: ' + Object.entries(GROUPS).filter(([, g]) => g.on).map(([, g]) => g.label).join(', ') + '.';
+    }
+  }
+  return 'Unknown hologram action: ' + a;
+};
+
 start();
 
 window.__hud = { call, esc, put, S };

@@ -1,6 +1,6 @@
 """Background agent: a worker that carries out a goal on its own while JARVIS keeps talking to you.
 
-It uses the regular Gemini API (not the live voice session) with the same research / script / verify tools, but never
+It uses the regular Gemini API (or, when another model provider is chosen in Configuration, that provider) with the same research / script / verify tools, but never
 touches your mouse, keyboard or screen, so it cannot get in your way. It reports back when it is finished.
 """
 import platform, threading, time
@@ -8,6 +8,8 @@ from pathlib import Path
 
 from google import genai
 from google.genai import types
+
+import jv_models
 
 MAX_STEPS = 30
 MAX_SECONDS = 25 * 60
@@ -43,8 +45,11 @@ class Agent:
         goal = (goal or "").strip()
         if not goal:
             return "No goal given."
-        if not self.core.cfg.get("api_key"):
+        cfg = self.core.cfg
+        if jv_models.is_live(cfg) and not cfg.get("api_key"):
             return "Background tasks need the Gemini API key."
+        if not jv_models.is_live(cfg) and jv_models.ChatClient(cfg).problem():
+            return "Background tasks need a working model: " + jv_models.ChatClient(cfg).problem()
         job = self.core.jobs.create("agent", name or goal[:70])  # raises RuntimeError when too many are running
         threading.Thread(target=self._run, args=(job, goal), daemon=True).start()
         return ("Started background task %s: %s. It runs on its own and will report back when finished; "
@@ -71,8 +76,32 @@ class Agent:
             idx += 1
         raise last or RuntimeError("No worker model is available.")
 
+    def _run_any(self, job, goal):
+        """Same protocol on any provider (OpenAI-compatible, Anthropic, local)."""
+        core, t0 = self.core, time.time()
+        try:
+            def stop():
+                return job.cancel_flag or time.time() - t0 > MAX_SECONDS
+            final = jv_models.run_tool_loop(
+                core.cfg, worker_prompt(core), goal, core.worker_tool_decls(),
+                lambda n, a: core.tool(n, a, job=job), MAX_STEPS, stop,
+                model=(core.cfg.get("worker_model") or "").strip() or None,
+                on_step=lambda i, n: core.jobs.set_progress(job, "step %d: %s" % (i, n.replace("_", " "))))
+            if final is None:
+                if job.cancel_flag:
+                    core.jobs.finish(job, "cancelled", "Cancelled by the user.")
+                else:
+                    core.jobs.finish(job, "failed", "Stopped: the task ran longer than %d minutes." % (MAX_SECONDS // 60))
+                return
+            status = "done" if final and not final.startswith("Stopped") else "failed"
+            core.jobs.finish(job, status, (final or "Finished with no report.")[:900])
+        except Exception as e:
+            core.jobs.finish(job, "failed", "%s: %s" % (type(e).__name__, str(e)[:260]))
+
     def _run(self, job, goal):
         core = self.core
+        if not jv_models.is_live(core.cfg):
+            return self._run_any(job, goal)
         t0 = time.time()
         try:
             client = genai.Client(api_key=core.cfg["api_key"], http_options={"api_version": "v1beta"})

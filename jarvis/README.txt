@@ -1,5 +1,6 @@
 J.A.R.V.I.S.
 A voice-first assistant with a holographic HUD that can operate your PC.
+JARVIS-3: works with almost any AI model, a 3D wireframe hologram interface and a holographic Earth with live satellites.
 
 INSTALL (Windows)
 1. Nothing to install by hand: the installer finds a 64-bit Python 3.11-3.13 or installs Python 3.12 for you
@@ -72,3 +73,33 @@ security, read-only), daily_brief, camera_look (needs opencv-python), redact_tex
 Stored in ~/.jarvis/personal/. Offline mode (Settings) blocks every network tool, but the live voice talks to Google's Gemini.
 Not built (needs hardware or services that do not exist here): AR headset control, joining meetings as you, real
 gesture tracking beyond single camera frames, direct dealings with other AI services beyond api_request.
+
+JARVIS-3: ANY MODEL
+Configuration (cog) > AI model provider. Choose one:
+  Gemini Live (default, native voice) · Anthropic Claude · OpenAI · Google Gemini text models · OpenRouter (hundreds of models)
+  · Groq · Mistral · DeepSeek · xAI Grok · Together · Ollama (local) · LM Studio (local) · any custom OpenAI-compatible server.
+Paste the provider's key (local models need none), press List to see every model your key can use, pick one, press Test model.
+Every tool, the authorisation cards, the background worker and the hologram work the same with every provider.
+Voice with non-Gemini models: the wake word still runs on your PC. Speech is turned into text by the provider's Whisper
+(OpenAI, Groq), by Gemini if you also keep a Gemini key, or entirely on your PC with "pip install faster-whisper".
+Replies are spoken by the Fish Audio film voice if you have a key, OpenAI's voice when OpenAI is the provider, or your
+computer's own voice (Windows/macOS built in; Linux needs espeak-ng). Choose under Voice input / Voice output.
+Screenshots ("look at this") are sent to the model as images, so pick a vision-capable model for that.
+Small local models may not support tools; JARVIS then still chats but cannot act.
+
+JARVIS-3: HOLOGRAPHIC EARTH
+Press G (or the globe button, top right), or just ask: "show me the Earth", "where is the ISS?", "track Hubble",
+"take me to Tokyo", "ride along with the space station", "show the GPS satellites", "set my home to Leeds".
+- Dot-matrix continents, vector coastlines and borders (Natural Earth), the real day/night terminator and subsolar point.
+- Live satellites from CelesTrak (stations, brightest, GPS, weather, science, geostationary, Starlink), propagated with SGP4
+  in real time and refreshed every 3 hours. Offline it shows clearly labelled simulated orbits instead.
+- Click a satellite (or search for it) to lock on: orbit, ground track, coverage footprint, altitude, speed, period.
+  Satellite view (V) rides along with it looking down at Earth.
+- Drag to rotate, scroll or +/- to zoom, arrows to turn, [ and ] to step through notable satellites, Esc to release.
+- Altitudes above 2,000 km are drawn compressed so high orbits fit on the screen; the numbers are always real.
+Everything 3D (three.js, satellite.js, the map) ships inside the hud/vendor folder, so the HUD loads with no internet.
+
+JARVIS-3: ACCESSIBILITY
+Configuration > Accessibility: reduce motion (also follows your system setting), high contrast, captions on/off and
+text/panel size. Every button has a label, JARVIS's replies are read out by screen readers, the authorisation card is a
+proper dialog, and everything on the hologram (satellite readouts, places) is also written out as text.

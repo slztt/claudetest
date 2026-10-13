@@ -15,6 +15,7 @@ from google.genai import types
 import webview
 
 import jv_core
+import jv_models
 from jv_tools import NEW_TOOLS
 from jv_plus import PLUS_TOOLS
 
@@ -139,6 +140,15 @@ TOOLS = [
     _t("web_search", "Search the web for current information, news, facts.", {"query": (S_, "Search query")}, ["query"]),
     _t("read_webpage", "Fetch a web page and read its text.", {"url": (S_, "Full https URL")}, ["url"]),
     _t("get_weather", "Get the current weather and forecast.", {"location": (S_, "City name; empty for the user's own location")}),
+    _t("hologram", "Drive the holographic 3D HUD on the user's screen. show_earth brings up the 3D holographic Earth with live satellites; "
+       "show_core returns to the core. focus_place flies the globe to a city or place and pins it. track_satellite locks onto a satellite "
+       "(ISS, Hubble, Tiangong, NOAA 19, a GPS or Starlink name...) and shows its orbit, ground track and footprint; satellite_view rides along "
+       "with it looking down at Earth. where_is reports a satellite's live position, altitude and speed. list_satellites names what is loaded. "
+       "layers chooses which satellite groups are shown. set_home pins the user's home location. reset_view frees the camera. "
+       "Use it whenever the user asks to see the Earth, a place, a satellite, an orbit or where something is in space.",
+       {"action": (S_, "show_earth, show_core, focus_place, track_satellite, satellite_view, where_is, list_satellites, layers, set_home or reset_view"),
+        "query": (S_, "Place name, or satellite name or NORAD number"),
+        "layers": (S_, "For layers: comma-separated groups from stations, brightest, gps, weather, science, geo, starlink; or all / none")}, ["action"]),
 ]
 
 WIN_APPS = {"chrome": "chrome", "google chrome": "chrome", "edge": "msedge", "firefox": "firefox", "notepad": "notepad",
@@ -1225,8 +1235,17 @@ class Brain:
         self.loop = asyncio.new_event_loop()
         self.session, self.connected, self.thinking = None, False, False
         self.turn_open, self.interrupted, self.q, self._work = False, False, None, None
-        self.mi = 0
+        self.mi, self.retired = 0, False
         threading.Thread(target=self._run, daemon=True).start()
+
+    @property
+    def needs_setup(self):
+        return not self.app.cfg["api_key"]
+
+    def retire(self):
+        """Another model provider was chosen: close the live session and stop reconnecting."""
+        self.retired = True
+        self.reconnect()
 
     def _run(self):
         asyncio.set_event_loop(self.loop)
@@ -1245,7 +1264,7 @@ class Brain:
 
     async def _main(self):
         delay = 3
-        while True:
+        while not self.retired:
             if not self.app.cfg["api_key"]:
                 self.app.post("status", "Open Configuration and add your Gemini API key.")
                 await asyncio.sleep(1)
@@ -1265,6 +1284,8 @@ class Brain:
                     await self._work
             except asyncio.CancelledError:
                 delay = 0.5
+                if self.retired:
+                    break
                 self.app.post("log", "sys", "Reconnecting with new settings...")
             except Exception as e:
                 self.app.post("log", "sys", "Connection failed (%s): %s" % (type(e).__name__, str(e)[:300]))
@@ -1277,7 +1298,9 @@ class Brain:
             finally:
                 for t in ts:
                     t.cancel()
-                self.connected, self.session, self.audio.on_chunk, self.thinking = False, None, None, False
+                self.connected, self.session, self.thinking = False, None, False
+                if self.audio.on_chunk == self._mic:
+                    self.audio.on_chunk = None
             await asyncio.sleep(delay)
             delay = min(delay * 2, 60)
 
@@ -1378,6 +1401,8 @@ class Brain:
 class Core:
     def __init__(self):
         self.cfg = load_json(CFG_FILE, DEFAULT_CFG)
+        for k, v in jv_models.MODEL_CFG.items():
+            self.cfg.setdefault(k, v)
         self.store = load_json(STORE_FILE, {"tasks": [], "notes": [], "contacts": {}})
         self.window, self.loaded = None, False
         self._pending, self._ui_lock, self._ap, self._ap_id = [], threading.Lock(), None, 0
@@ -1389,7 +1414,7 @@ class Core:
         self.audio = AudioIO(self.cfg)
         self.fish = FishVoice(self)
         self.audio.hold = lambda: self.fish.busy
-        self.brain = Brain(self)
+        self.brain = self.make_brain()
         self.wake = WakeWord(self)
         self.audio.tap, self.audio.gate = self.wake.feed, (lambda: self.active)
         jv_core.attach(self, HERE, DATA, resolve_path, is_risky, is_hard, TOOLS)  # JARVIS-2: skills, jobs, scripts, background agent
@@ -1430,8 +1455,24 @@ class Core:
         save_json(STORE_FILE, self.store)
         self.post("lists")
 
+    def make_brain(self):
+        if jv_models.is_live(self.cfg):
+            return Brain(self)
+        return jv_models.ChatBrain(self, lambda: TOOLS + NEW_TOOLS + PLUS_TOOLS, IN_RATE, OUT_RATE)
+
+    def swap_brain(self):
+        """Switch model provider without restarting JARVIS."""
+        old = self.brain
+        try:
+            old.retire()
+        except Exception:
+            pass
+        self.brain = self.make_brain()
+        name, info = jv_models.provider_info(self.cfg)
+        self.ui({"t": "brain", "provider": name, "label": info[0], "model": getattr(getattr(self.brain, "client", None), "model", "") or "native audio"})
+
     def state(self):
-        if not self.cfg["api_key"]:
+        if self.brain.needs_setup:
             return "SETUP"
         if not self.brain.connected:
             return "CONNECTING"
@@ -1450,7 +1491,7 @@ class Core:
             n += 1
             now = time.monotonic()
             if self.active:  # the follow-up window closes once he has finished and you have gone quiet
-                if self.audio.speaking or self.fish.busy or self.brain.thinking or self.brain.turn_open or self.audio.level > 0.12:
+                if self.audio.speaking or self.fish.busy or self.brain.thinking or self.brain.turn_open or getattr(self.brain, "speaking_tts", False) or self.audio.level > 0.12:
                     self.last_act = max(self.last_act, now)
                 elif now - self.last_act > FOLLOW_UP or self.audio.muted:
                     self.active = False
@@ -1612,8 +1653,37 @@ class Core:
             self.audio.sfx("error")
             return "Error: %s: %s" % (type(e).__name__, str(e)[:200])
 
+    def hologram(self, a):
+        """The `hologram` tool: geocode in Python (so the HUD stays synchronous), then hand the command to the HUD."""
+        act = str(a.get("action", "")).strip().lower()
+        cmd = {"action": act, "query": str(a.get("query", "") or "").strip(), "layers": str(a.get("layers", "") or "")}
+        if act in ("focus_place", "set_home"):
+            if not cmd["query"]:
+                return "Say which place."
+            try:
+                hit = jv_models.geocode(cmd["query"])
+            except Exception as e:
+                return "Could not look that place up: %s" % str(e)[:160]
+            if not hit:
+                return "No place called %s was found." % cmd["query"]
+            cmd["name"], cmd["lat"], cmd["lon"] = hit
+            if act == "set_home":
+                for k, v in (("home_name", hit[0]), ("home_lat", round(hit[1], 5)), ("home_lon", round(hit[2], 5))):
+                    self.cfg[k] = v
+                save_json(CFG_FILE, self.cfg)
+        if not (self.loaded and self.window):
+            return "The HUD is not open yet."
+        try:
+            with self._ui_lock:
+                r = self.window.evaluate_js("window.HUD&&HUD.hologram?HUD.hologram(%s):'HUD not ready'" % json.dumps(cmd))
+            return str(r if r is not None else "Done.")
+        except Exception as e:
+            return "HUD error: %s" % str(e)[:160]
+
     def _tool(self, name, a):
         c = self.comp
+        if name == "hologram":
+            return self.hologram(a)
         if name == "set_timer":
             sec = float(a.get("seconds", 0))
             if sec <= 0:
@@ -1764,7 +1834,9 @@ class Api:
         if c.wake_status:
             c.ui(c.wake_status)
         c.audio.sfx("boot")
-        return {"state": c.state(), "settings": dict(c.cfg), "lists": c.lists_payload()}
+        name, info = jv_models.provider_info(c.cfg)
+        return {"state": c.state(), "settings": dict(c.cfg), "lists": c.lists_payload(), "providers": jv_models.provider_list(),
+                "brain": {"provider": name, "label": info[0], "model": getattr(getattr(c.brain, "client", None), "model", "") or "native audio"}}
 
     def send_text(self, text):
         self._c.send_text(str(text))
@@ -1790,6 +1862,19 @@ class Api:
 
     def set_setting(self, key, value):
         c = self._c
+        if key in jv_models.MODEL_CFG:
+            try:
+                value = jv_models.coerce(key, value)
+            except Exception:
+                return
+            old = c.cfg.get(key)
+            c.cfg[key] = value
+            save_json(CFG_FILE, c.cfg)
+            if key == "brain_provider" and value != old:
+                c.swap_brain()
+            elif key in jv_models.BRAIN_KEYS and value != old:
+                c.brain.reconnect()
+            return
         if key not in DEFAULT_CFG and key not in jv_core.NEW_CFG:
             return
         old = c.cfg.get(key)
@@ -1824,6 +1909,70 @@ class Api:
 
     def test_audio(self):
         self._c.audio.sfx("wake")
+
+    # ---- any-model brain ----
+    def providers(self):
+        return jv_models.provider_list()
+
+    def list_models(self):
+        """Ask the configured provider which models this key can use (for the model picker)."""
+        cfg = self._c.cfg
+        try:
+            if jv_models.is_live(cfg):
+                return {"ok": True, "models": MODELS}
+            return {"ok": True, "models": jv_models.ChatClient(cfg).list_models()[:400]}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:300]}
+
+    def test_brain(self):
+        """One tiny round trip so the user knows the provider, key and model work."""
+        cfg = self._c.cfg
+        if jv_models.is_live(cfg):
+            return {"ok": bool(self._c.brain.connected), "text": "Gemini Live is %s." % ("connected" if self._c.brain.connected else "not connected yet")}
+        try:
+            cl = jv_models.ChatClient(cfg)
+            p = cl.problem()
+            if p:
+                return {"ok": False, "text": p}
+            t0 = time.time()
+            text, _, _ = cl.chat("Reply with exactly: Systems online.", [{"role": "user", "content": "Status?"}], None, max_tokens=20)
+            return {"ok": True, "text": "%s replied in %.1fs: %s" % (cl.model, time.time() - t0, (text or "(empty)")[:80])}
+        except Exception as e:
+            return {"ok": False, "text": str(e)[:300]}
+
+    # ---- hologram data ----
+    TLE_GROUPS = {"stations": "stations", "brightest": "visual", "gps": "gps-ops", "weather": "weather",
+                  "science": "science", "geo": "geo", "starlink": "starlink"}
+
+    def get_tle(self, group):
+        """Two-line element sets from CelesTrak, cached for 3 hours (CelesTrak asks clients not to poll faster)."""
+        g = self.TLE_GROUPS.get(str(group))
+        if not g:
+            return ""
+        folder = DATA / "tle"
+        folder.mkdir(parents=True, exist_ok=True)
+        f = folder / (g + ".txt")
+        if f.exists() and time.time() - f.stat().st_mtime < 3 * 3600:
+            return f.read_text(encoding="utf-8", errors="replace")
+        if self._c.cfg.get("offline_mode"):
+            return f.read_text(encoding="utf-8", errors="replace") if f.exists() else ""
+        try:
+            req = urllib.request.Request("https://celestrak.org/NORAD/elements/gp.php?GROUP=%s&FORMAT=tle" % g, headers={"User-Agent": "JARVIS-HUD"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                txt = r.read().decode("utf-8", "replace")
+            if "1 " in txt and "2 " in txt:
+                f.write_text(txt, encoding="utf-8")
+                return txt
+        except Exception:
+            pass
+        return f.read_text(encoding="utf-8", errors="replace") if f.exists() else ""
+
+    def geocode(self, place):
+        try:
+            hit = jv_models.geocode(str(place))
+            return {"name": hit[0], "lat": hit[1], "lon": hit[2]} if hit else None
+        except Exception:
+            return None
 
     def remove_item(self, kind, index):
         c = self._c

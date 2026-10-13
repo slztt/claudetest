@@ -4,6 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createGlobe, R as GLOBE_R } from './globe.js';
 
 const NOISE = /* glsl */ `
 vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
@@ -62,7 +63,7 @@ const STATES = {
   SETUP:      { c: 0xffb347, speed: 0.5, energy: 0.2,  bloom: 0.9,  scale: 0.92 },
 };
 
-export function createScene(canvas) {
+export function createScene(canvas, opts = {}) {
   let themeHue = 0, themeMono = false;
   const KEEP = ['THINKING', 'MUTED', 'SETUP'];          // amber and red keep their meaning in every theme
   const hsl = {};
@@ -93,6 +94,12 @@ export function createScene(canvas) {
   const shocks = [];
   const tinted = []; // basic materials that follow the state colour
   let gridPulse = 1;
+  let calm = false;                 // reduced motion (accessibility)
+  let modeTarget = 0, gm = 0;       // 0 = core, 1 = holographic Earth
+  let zoom = 1, zoomT = 1;          // globe camera distance multiplier
+  let glitch = 0;
+  const camLook = new THREE.Vector3(0, -0.2, 0);
+  let baseCam = null;
 
   const additive = (extra = {}) => ({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, ...extra });
   const basic = (opacity) => {
@@ -195,6 +202,7 @@ export function createScene(canvas) {
   const rings = ringDefs.map((d) => {
     const g = new THREE.Group();
     const m = new THREE.Mesh(new THREE.TorusGeometry(d.R, d.tube, 6, 180, d.arc), basic(d.op));
+    m.userData.op = d.op;
     g.add(m);
     g.rotation.set(d.rx, d.ry, d.rz);
     g.userData = { sp: d.sp, rz: d.rz };
@@ -246,9 +254,14 @@ export function createScene(canvas) {
         uniform vec3 uColor; uniform float uTime, uPulse; varying vec3 vW;
         void main(){
           vec2 p = vW.xz; float r = length(p);
-          vec2 q = p * 0.5;
-          vec2 g = abs(fract(q - 0.5) - 0.5) / fwidth(q);
-          float ln = 1.0 - min(min(g.x, g.y), 1.0);
+          // hexagonal grid: distance to the nearest hex edge
+          vec2 q = p * 0.55;
+          vec2 sq = vec2(1.0, 1.7320508);
+          vec2 ha = mod(q, sq) - sq * 0.5, hb = mod(q - sq * 0.5, sq) - sq * 0.5;
+          vec2 hc = dot(ha, ha) < dot(hb, hb) ? ha : hb;
+          vec2 ah = abs(hc);
+          float hexd = 0.5 - max(dot(ah, normalize(sq)), ah.x);
+          float ln = 1.0 - smoothstep(0.0, fwidth(q.x) * 1.4, hexd);
           float w = abs(fract(r * 0.22 - uTime * 0.05) - 0.5);
           float ring = smoothstep(0.455, 0.5, w);
           float pr = exp(-pow((r - uPulse * 22.0) * 0.9, 2.0)) * (1.0 - uPulse) * smoothstep(0.0, 0.1, uPulse) * smoothstep(1.5, 5.0, r);
@@ -261,6 +274,76 @@ export function createScene(canvas) {
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -3.0;
   scene.add(floor);
+
+  /* ---------- hologram projector: emitter on the floor and a light cone up to the hologram ---------- */
+  const beamU = { uTime: { value: 0 }, uColor: { value: color }, uLevel: { value: 0 }, uOn: { value: 1 } };
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6, 0.55, 2.4, 96, 1, true),
+    new THREE.ShaderMaterial({
+      uniforms: beamU, ...additive(), side: THREE.DoubleSide,
+      vertexShader: `varying vec2 vUv; varying vec3 vP; void main(){ vUv = uv; vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor; uniform float uTime, uLevel, uOn; varying vec2 vUv; varying vec3 vP;
+        void main(){
+          float h = vUv.y;                                   // 0 at the emitter, 1 at the top
+          float fade = pow(1.0 - h, 1.6) * smoothstep(0.0, 0.08, h);
+          float rays = 0.55 + 0.45 * pow(abs(sin(vUv.x * 3.14159 * 48.0 + uTime * 0.6)), 6.0);
+          float scan = smoothstep(0.02, 0.0, abs(fract(h * 1.0 - uTime * 0.35) - 0.5) - 0.47);
+          float a = fade * (0.06 + 0.06 * uLevel) * rays + scan * 0.10 * (1.0 - h);
+          gl_FragColor = vec4(uColor, a * uOn);
+        }`,
+    })
+  );
+  beam.position.y = -1.8;
+  scene.add(beam);
+  const emitter = new THREE.Group();
+  emitter.add(tickRing(0.62, 96, 0.08, 0.035, 0.7));
+  const emDisc = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.5, 64), basic(0.35));
+  emitter.add(emDisc);
+  const emRing = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.008, 6, 128), basic(0.8));
+  emitter.add(emRing);
+  emitter.rotation.x = -Math.PI / 2;
+  emitter.position.y = -2.98;
+  scene.add(emitter);
+
+  /* ---------- radar sweep on the orbital plate ---------- */
+  const sweepU = { uTime: { value: 0 }, uColor: { value: color } };
+  const sweepM = new THREE.Mesh(
+    new THREE.CircleGeometry(3.9, 128),
+    new THREE.ShaderMaterial({
+      uniforms: sweepU, ...additive(), side: THREE.DoubleSide,
+      vertexShader: `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor; uniform float uTime; varying vec2 vP;
+        void main(){
+          float r = length(vP) / 3.9; if (r > 1.0 || r < 0.45) discard;
+          float a = atan(vP.y, vP.x);
+          float d = mod(uTime * 1.1 - a, 6.28318);
+          float trail = exp(-d * 2.2) * 0.38;
+          float blips = step(0.985, fract(sin(floor(a * 30.0) * 91.7 + floor(r * 9.0) * 13.1) * 4375.5)) * exp(-d * 0.7) * 0.9;
+          gl_FragColor = vec4(uColor, (trail + blips) * smoothstep(1.0, 0.85, r) * smoothstep(0.45, 0.55, r));
+        }`,
+    })
+  );
+  plate.add(sweepM);
+
+  /* ---------- orbiting wireframe drones (little holographic data probes) ---------- */
+  const drones = [];
+  [[new THREE.OctahedronGeometry(0.11, 0), 3.2, 0.42, 0.3], [new THREE.TetrahedronGeometry(0.12, 0), 3.7, -0.3, 1.9],
+   [new THREE.IcosahedronGeometry(0.1, 0), 2.7, 0.65, 3.8], [new THREE.BoxGeometry(0.13, 0.13, 0.13), 4.1, -0.5, 5.1]].forEach(([g, r, sp, ph], i) => {
+    const m = new THREE.LineSegments(new THREE.EdgesGeometry(g), line(0.95));
+    const trailPos = new Float32Array(40 * 3);
+    const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
+    const trail = new THREE.Line(tg, line(0.25));
+    m.userData = { r, sp, ph, tilt: 0.35 + i * 0.32, trail, trailPos };
+    root.add(m); root.add(trail);
+    drones.push(m);
+  });
+
+  /* ---------- holographic Earth ---------- */
+  const globe = createGlobe({ color, pxRatio: renderer.getPixelRatio(), loadTLE: opts.loadTLE || (async () => ''), onUpdate: opts.onGlobe });
+  globe.group.visible = false;
+  scene.add(globe.group);
 
   /* ---------- drifting dust ---------- */
   const DN = 900, dp = new Float32Array(DN * 3), ds = new Float32Array(DN);
@@ -298,6 +381,7 @@ export function createScene(canvas) {
     root.add(m);
     shocks.push(m);
     gridPulse = 0;
+    if (!calm) glitch = Math.max(glitch, 0.6 * strength);
   }
 
   /* ---------- post-processing: bloom + lens, curvature, grain, scanlines ---------- */
@@ -306,21 +390,23 @@ export function createScene(canvas) {
   const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.6, 0.55, 0.22);
   composer.addPass(bloom);
   const fx = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAb: { value: 0.0016 }, uBoot: { value: 1 } },
+    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uAb: { value: 0.0016 }, uBoot: { value: 1 }, uGlitch: { value: 0 }, uCalm: { value: 0 } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D tDiffuse; uniform float uTime, uAb, uBoot; varying vec2 vUv;
+      uniform sampler2D tDiffuse; uniform float uTime, uAb, uBoot, uGlitch, uCalm; varying vec2 vUv;
       float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main(){
         vec2 c = vUv - 0.5; float d = dot(c, c);
         vec2 uv = 0.5 + c * (1.0 + 0.07 * d);              // gentle barrel curve
+        float band = step(0.82, h(vec2(floor(vUv.y * 38.0), floor(uTime * 24.0))));
+        uv.x += (h(vec2(floor(vUv.y * 38.0), uTime)) - 0.5) * 0.045 * band * uGlitch;   // hologram tear on wake / mode change
         vec2 o = c * uAb * (1.0 + d * 8.0);
         float r = texture2D(tDiffuse, uv + o).r;
         float g = texture2D(tDiffuse, uv).g;
         float b = texture2D(tDiffuse, uv - o).b;
         vec3 col = vec3(r, g, b);
-        col *= 0.93 + 0.07 * sin(gl_FragCoord.y * 1.6);     // scanlines
-        col += (h(vUv * 900.0 + uTime) - 0.5) * 0.028;      // film grain
+        col *= 1.0 - (1.0 - uCalm) * 0.07 * (0.5 - 0.5 * sin(gl_FragCoord.y * 1.6));     // scanlines
+        col += (h(vUv * 900.0 + uTime) - 0.5) * 0.028 * (1.0 - uCalm);      // film grain
         col *= smoothstep(1.0, 0.18, length(c) * 1.25);     // vignette
         col *= uBoot;
         gl_FragColor = vec4(col, 1.0);
@@ -338,16 +424,20 @@ export function createScene(canvas) {
     camera.position.set(0, 0.5, w / h < 1.3 ? 8.2 + (1.3 - w / h) * 5 : 8.2);
     camera.lookAt(0, -0.2, 0);
     camera.updateProjectionMatrix();
+    if (baseCam) baseCam.copy(camera.position);
   }
   new ResizeObserver(resize).observe(canvas);
   resize();
 
   /* ---------- per-frame ---------- */
   const clock = new THREE.Clock();
-  const baseCam = camera.position.clone();
+  baseCam = camera.position.clone();
+  const camPos = new THREE.Vector3(), camUp = new THREE.Vector3(0, 1, 0), lookTmp = new THREE.Vector3();
+  let satBlend = 0;
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.05);
     t += dt;
+    const dm = dt * (calm ? 0.25 : 1);                 // motion budget: reduced-motion slows everything that spins
     const k = 1 - Math.exp(-dt * 4);
     color.lerp(target, k);
     for (const m of tinted) m.color.copy(color).multiplyScalar(0.78);
@@ -359,35 +449,66 @@ export function createScene(canvas) {
     const want = stateName === 'SPEAKING' ? outL : stateName === 'LISTENING' ? inL * 0.9 : stateName === 'STANDBY' ? inL * 0.15 : 0;
     lvl += (want - lvl) * (want > lvl ? 0.45 : 0.12);
 
-    coreU.uTime.value = shellU.uTime.value = floorU.uTime.value = dustU.uTime.value = t;
-    coreU.uLevel.value = shellU.uLevel.value = lvl;
+    // core <-> Earth morph
+    gm += (modeTarget - gm) * Math.min(1, dt * (calm ? 6 : 1.7));
+    if (Math.abs(modeTarget - gm) < 1e-3) gm = modeTarget;
+    const coreK = Math.max(0, 1 - gm * 1.25);
+    const earthK = Math.min(1, Math.max(0, (gm - 0.15) / 0.85));
+
+    coreU.uTime.value = shellU.uTime.value = floorU.uTime.value = dustU.uTime.value = beamU.uTime.value = sweepU.uTime.value = t;
+    coreU.uLevel.value = shellU.uLevel.value = beamU.uLevel.value = lvl;
     coreU.uEnergy.value = P.energy;
     gridPulse = Math.min(1, gridPulse + dt * 0.55);
     floorU.uPulse.value = gridPulse;
 
-    const breathe = P.scale * (1 + 0.025 * Math.sin(t * 1.5) + 0.16 * lvl);
-    core.scale.setScalar(breathe);
-    inner.scale.setScalar(breathe * (1 + 0.3 * Math.sin(t * 3) * P.energy));
-    lattice.rotation.y += dt * 0.25 * P.speed; lattice.rotation.x += dt * 0.11 * P.speed;
-    lattice2.rotation.y -= dt * 0.18 * P.speed; lattice2.rotation.z += dt * 0.09 * P.speed;
-    shell.rotation.y += dt * 0.07 * (0.4 + P.speed); shell.rotation.x = Math.sin(t * 0.2) * 0.15;
+    const breathe = P.scale * (1 + (calm ? 0 : 0.025 * Math.sin(t * 1.5)) + 0.16 * lvl);
+    core.scale.setScalar(Math.max(1e-3, breathe * coreK));
+    inner.scale.setScalar(Math.max(1e-3, breathe * coreK * (1 + 0.3 * Math.sin(t * 3) * P.energy)));
+    lattice.scale.setScalar(Math.max(1e-3, coreK)); lattice2.scale.setScalar(Math.max(1e-3, coreK));
+    shell.scale.setScalar(Math.max(1e-3, 1 + gm * 0.55));
+    shellU.uAlpha.value = 0.85 * (1 - gm * 0.75);
+    core.visible = inner.visible = lattice.visible = lattice2.visible = coreK > 0.002;
+    lattice.rotation.y += dm * 0.25 * P.speed; lattice.rotation.x += dm * 0.11 * P.speed;
+    lattice2.rotation.y -= dm * 0.18 * P.speed; lattice2.rotation.z += dm * 0.09 * P.speed;
+    shell.rotation.y += dm * 0.07 * (0.4 + P.speed); shell.rotation.x = Math.sin(t * 0.2) * 0.15;
     shellU.uSize.value = 1.8 + P.energy * 1.2;
 
+    const ringK = 1 + 0.34 * gm;
     for (const g of rings) {
-      g.rotation.z += dt * g.userData.sp * P.speed;
-      g.rotation.y += dt * 0.05 * P.speed * Math.sign(g.userData.sp);
+      g.rotation.z += dm * g.userData.sp * P.speed;
+      g.rotation.y += dm * 0.05 * P.speed * Math.sign(g.userData.sp);
+      g.scale.setScalar(ringK);
+      g.children[0].material.opacity = g.children[0].userData.op * (1 - 0.68 * gm);   // step back so the Earth reads clearly
     }
-    plate.rotation.z += dt * 0.06 * (0.5 + P.speed * 0.5);
+    plate.rotation.z += dm * 0.06 * (0.5 + P.speed * 0.5);
+    plate.scale.setScalar(1 + 0.12 * gm);
+    emitter.rotation.z -= dm * 0.4;
+    emRing.scale.setScalar(1 + 0.08 * Math.sin(t * 2.2) + lvl * 0.4);
+    beamU.uOn.value = 0.75 + 0.25 * gm;
 
-    // voice ring: gentle idle ripple, strong response to the voice level
+    // drones orbit and leave a short trail
+    for (const d of drones) {
+      const u = d.userData, a = t * u.sp * (calm ? 0.25 : 1) * (0.6 + P.speed * 0.4) + u.ph;
+      const r = u.r * (1 + 0.15 * gm);
+      d.position.set(Math.cos(a) * r, Math.sin(a * 0.7) * 0.6 + Math.sin(u.tilt) * Math.sin(a) * r * 0.35, Math.sin(a) * r);
+      d.rotation.x += dm * 1.3; d.rotation.y += dm * 0.9;
+      u.trailPos.copyWithin(3, 0, u.trailPos.length - 3);
+      u.trailPos[0] = d.position.x; u.trailPos[1] = d.position.y; u.trailPos[2] = d.position.z;
+      u.trail.geometry.attributes.position.needsUpdate = true;
+    }
+
+    // voice ring: gentle idle ripple, strong response to the voice level; widens to circle the Earth
     const amp = 0.025 + lvl * 0.6;
+    const baseR = 1.98 * (1 + 0.24 * gm);
     for (let i = 0; i < WN; i++) {
       const a = (i / WN) * Math.PI * 2;
-      const n = Math.sin(a * 7 + t * 3.1) * 0.5 + Math.sin(a * 13 - t * 4.7) * 0.3 + Math.sin(a * 3 + t * 1.3) * 0.4;
-      const r = 1.98 + n * amp;
+      const n = calm ? Math.sin(a * 7) * 0.3 : Math.sin(a * 7 + t * 3.1) * 0.5 + Math.sin(a * 13 - t * 4.7) * 0.3 + Math.sin(a * 3 + t * 1.3) * 0.4;
+      const r = baseR + n * amp;
       wavePos[i * 3] = Math.cos(a) * r; wavePos[i * 3 + 1] = Math.sin(a) * r; wavePos[i * 3 + 2] = 0;
     }
     waveG.attributes.position.needsUpdate = true;
+    wave.rotation.x = wave2.rotation.x = gm * 1.25;   // lies down into an equatorial ring around the Earth
+    wave.material.opacity = 0.95 * (1 - 0.45 * gm); wave2.material.opacity = 0.35 * (1 - 0.45 * gm);
 
     for (let i = shocks.length - 1; i >= 0; i--) {
       const s = shocks[i];
@@ -398,19 +519,45 @@ export function createScene(canvas) {
       if (a >= 1) { root.remove(s); s.material.dispose(); shocks.splice(i, 1); }
     }
 
-    // camera: intro push-in, slow drift, mouse parallax
-    mouse.x += (mouse.tx - mouse.x) * 0.05; mouse.y += (mouse.ty - mouse.y) * 0.05;
-    let z = baseCam.z;
-    if (introOn) { intro = Math.min(1, intro + dt / 2.6); z += (1 - (1 - Math.pow(1 - intro, 3))) * 7; if (intro >= 1) introOn = false; }
-    camera.position.set(baseCam.x + mouse.x * 0.8 + Math.sin(t * 0.17) * 0.12, baseCam.y - mouse.y * 0.45 + Math.cos(t * 0.13) * 0.08, z);
-    camera.lookAt(0, -0.2, 0);
-    root.rotation.y = mouse.x * 0.28 + Math.sin(t * 0.21) * 0.05;
-    root.rotation.x = -mouse.y * 0.12;
+    // Earth
+    globe.group.visible = earthK > 0.001;
+    if (globe.group.visible) {
+      globe.setReveal(earthK);
+      globe.group.scale.setScalar(0.9 + 0.1 * earthK);
+      globe.group.position.y = 0;
+      globe.update(dt, t, { calm });
+    }
 
-    bloom.strength = P.bloom * 0.62 + lvl * 0.45;
+    // camera: intro push-in, slow drift, mouse parallax; zoom in Earth mode; ride-along in satellite view
+    mouse.x += (mouse.tx - mouse.x) * 0.05; mouse.y += (mouse.ty - mouse.y) * 0.05;
+    zoom += (zoomT - zoom) * Math.min(1, dt * 5);
+    let z = baseCam.z * (1 + (zoom - 1) * gm);
+    if (introOn) { intro = Math.min(1, intro + dt / 2.6); z += (1 - (1 - Math.pow(1 - intro, 3))) * 7; if (intro >= 1) introOn = false; }
+    const par = 1 - gm * 0.8, drift = calm ? 0 : 1;
+    camPos.set(baseCam.x + mouse.x * 0.8 * par + Math.sin(t * 0.17) * 0.12 * drift, baseCam.y - mouse.y * 0.45 * par + Math.cos(t * 0.13) * 0.08 * drift, z);
+    lookTmp.set(0, -0.2 * (1 - gm), 0);
+    const sc = globe.group.visible ? globe.satCamera() : null;
+    satBlend += ((sc ? 1 : 0) - satBlend) * Math.min(1, dt * (calm ? 8 : 2.2));
+    if (sc && satBlend > 0.001) {
+      camPos.lerp(sc.pos, satBlend); lookTmp.lerp(sc.look, satBlend);
+      camUp.set(0, 1, 0).lerp(sc.up, satBlend).normalize();
+    } else camUp.set(0, 1, 0);
+    camera.position.copy(camPos);
+    camera.up.copy(camUp);
+    camLook.lerp(lookTmp, sc ? 1 : Math.min(1, dt * 4));
+    camera.lookAt(camLook);
+    const fovT = 48 + satBlend * 14;
+    if (Math.abs(camera.fov - fovT) > 0.01) { camera.fov = fovT; camera.updateProjectionMatrix(); }
+    root.rotation.y = (mouse.x * 0.28 + (calm ? 0 : Math.sin(t * 0.21) * 0.05)) * par;
+    root.rotation.x = -mouse.y * 0.12 * par;
+
+    glitch = Math.max(0, glitch - dt * 1.6);
+    bloom.strength = (P.bloom * 0.62 + lvl * 0.45) * (1 - 0.3 * gm) * (1 - 0.45 * satBlend);
     fx.uniforms.uTime.value = t;
-    fx.uniforms.uAb.value = 0.0014 + lvl * 0.003 + (gridPulse < 0.3 ? 0.003 : 0);
+    fx.uniforms.uGlitch.value = calm ? 0 : glitch;
+    fx.uniforms.uAb.value = calm ? 0.0008 : 0.0014 + lvl * 0.003 + (gridPulse < 0.3 ? 0.003 : 0) + glitch * 0.004;
     composer.render();
+    if (opts.onFrame) opts.onFrame(camera);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
@@ -424,7 +571,17 @@ export function createScene(canvas) {
     setLevels(i, o) { inL = i; outL = o; },
     setMouse(nx, ny) { mouse.tx = nx; mouse.ty = ny; },
     pulse,
-    intro() { introOn = true; intro = 0; },
+    intro() { if (!calm) { introOn = true; intro = 0; } },
     setBoot(v) { fx.uniforms.uBoot.value = v; },
+    setCalm(v) { calm = !!v; fx.uniforms.uCalm.value = calm ? 1 : 0; if (calm) introOn = false; },
+    setMode(m) {
+      const t2 = m === 'globe' ? 1 : 0;
+      if (t2 !== modeTarget && !calm) glitch = 0.9;
+      modeTarget = t2;
+      if (!t2) { globe.satView = false; zoomT = 1; }
+    },
+    get mode() { return modeTarget ? 'globe' : 'core'; },
+    zoomBy(f) { zoomT = Math.max(0.42, Math.min(1.9, zoomT * f)); },
+    globe, camera,
   };
 }

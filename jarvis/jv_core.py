@@ -21,7 +21,7 @@ NUM_KEYS = {"max_jobs": (1, 8, int), "research_budget": (8, 90, float), "remind_
 THEMES = ("cyan", "violet", "emerald", "amber", "crimson", "mono")
 # Tools a background worker must never get: they would fight the user for the screen, or spawn more workers.
 WORKER_BLOCK = {"camera_look", "workflow", "custom_command", "look_at_screen", "save_screenshot", "ui_control", "mouse_click", "type_text", "press_keys", "scroll_screen",
-                "window_control", "start_background_task", "send_message", "set_timer", "clipboard", "open_app", "open_website"}
+                "window_control", "start_background_task", "send_message", "set_timer", "clipboard", "open_app", "open_website", "hologram"}
 
 
 def coerce(key, value):
