@@ -942,6 +942,11 @@ def build_sfx():
     }
 
 
+try:
+    APP_VERSION = (Path(__file__).with_name("VERSION").read_text().strip() or "?")
+except Exception:
+    APP_VERSION = "?"
+
 LOOPBACK_RE = re.compile(r"stereo mix|what u hear|wave out mix|loopback|cable output|voicemeeter out|virtual audio|monitor of", re.I)
 
 
@@ -2077,7 +2082,7 @@ class Api:
         if c.wake_status:
             c.ui(c.wake_status)
         c.audio.sfx("boot")
-        return {"state": c.state(), "settings": dict(c.cfg), "lists": c.lists_payload(), "brain": {"label": "Gemini Live", "model": "voice, vision, tools"}}
+        return {"state": c.state(), "settings": dict(c.cfg), "lists": c.lists_payload(), "brain": {"label": "Gemini Live", "model": "version " + APP_VERSION}}
 
     def send_text(self, text):
         self._c.send_text(str(text))

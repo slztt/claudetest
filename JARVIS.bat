@@ -54,7 +54,23 @@ else { $App = Join-Path $env:LOCALAPPDATA 'JARVIS\app' }
 New-Item -ItemType Directory -Force -Path $App | Out-Null
 try { Start-Transcript -Path (Join-Path $App 'launcher.log') -Force | Out-Null } catch {}
 
-if (-not (Test-Path (Join-Path $App 'jarvis.py')) -or (Has 'update')) {
+# close a JARVIS that is already running, so the new one (and any update) actually takes effect
+try {
+  Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -like 'python*' -and $_.CommandLine -like '*jarvis.py*' } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; Say dim "Closed the JARVIS that was already running" }
+} catch {}
+
+# always run the newest version: compare the local VERSION file with the one online
+$verFile = Join-Path $App 'VERSION'
+$localVer = if (Test-Path $verFile) { (Get-Content $verFile -Raw).Trim() } else { '' }
+$remoteVer = ''
+if (-not (Has 'offline')) {
+  foreach ($b in $Branches) {
+    try { $remoteVer = ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri "https://raw.githubusercontent.com/$Repo/$b/jarvis/VERSION" -ErrorAction Stop).Content + '').Trim(); if ($remoteVer) { break } } catch {}
+  }
+}
+if ($remoteVer -and $remoteVer -ne $localVer) { Say step "New version available ($(if ($localVer) { $localVer } else { 'old' }) -> $remoteVer)" }
+if (-not (Test-Path (Join-Path $App 'jarvis.py')) -or (Has 'update') -or ($remoteVer -and $remoteVer -ne $localVer)) {
   Say step "Downloading JARVIS"
   $tmp = Join-Path $env:TEMP ("jarvis-" + [guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $tmp | Out-Null
@@ -88,7 +104,7 @@ if (-not (Test-Path (Join-Path $App 'jarvis.py')) -or (Has 'update')) {
 $Launcher = Join-Path $App 'JARVIS.bat'
 if ($Self -ne $Launcher -and -not (Test-Path $Launcher)) { Copy-Item -Path $Self -Destination $Launcher -Force }
 Set-Location $App
-Say ok "JARVIS folder: $App"
+Say ok "JARVIS folder: $App  (version $(if (Test-Path $verFile) { (Get-Content $verFile -Raw).Trim() } else { '?' }))"
 
 # ---------------------------------------------------------------- 2. Python 3.11-3.13 (64-bit)
 function Test-Py([string]$exe) {
@@ -136,12 +152,13 @@ if (-not (Test-Path $VPy)) {
 # ---------------------------------------------------------------- 3. packages (each group once; failures retried next run)
 function Pip-Group([string]$req, [string]$flag, [string]$label, [bool]$must) {
   $f = Join-Path $App "venv\$flag"
-  if ((Test-Path $f) -and -not (Has 'repair')) { return }
   if (-not (Test-Path (Join-Path $App $req))) { return }
+  $hash = (Get-FileHash -Path (Join-Path $App $req) -Algorithm SHA256).Hash
+  if ((Test-Path $f) -and ((Get-Content $f -Raw).Trim() -eq $hash) -and -not (Has 'repair')) { return }
   Say step "Installing $label"
   & $VPy -m pip install --disable-pip-version-check -q --upgrade pip | Out-Null
   & $VPy -m pip install --disable-pip-version-check -r (Join-Path $App $req)
-  if ($LASTEXITCODE -eq 0) { Set-Content -Path $f -Value 'ok'; Say ok "$label installed" }
+  if ($LASTEXITCODE -eq 0) { Set-Content -Path $f -Value $hash; Say ok "$label installed" }
   elseif ($must) { Say bad "$label failed to install (see the red text above). Check your internet and run this again."; exit 1 }
   else { Say warn "$label did not fully install; JARVIS still works and will retry later." }
 }
@@ -172,7 +189,8 @@ try {
   $programs = [Environment]::GetFolderPath('Programs')
   $desktop = [Environment]::GetFolderPath('Desktop')
   $q = '"' + (Join-Path $App 'jarvis.py') + '"'
-  foreach ($dir in @($programs, $desktop)) { Make-Link (Join-Path $dir 'JARVIS.lnk') $VPyw $q 'J.A.R.V.I.S.' }
+  # the JARVIS icon goes through this launcher, so every start checks for updates first
+  foreach ($dir in @($programs, $desktop)) { Make-Link (Join-Path $dir 'JARVIS.lnk') $Launcher '' 'J.A.R.V.I.S.' }
   Make-Link (Join-Path $programs 'JARVIS Setup and Repair.lnk') $Launcher 'repair' 'Scan this PC and repair or update JARVIS'
   Make-Link (Join-Path $programs 'JARVIS Update.lnk') $Launcher 'update' 'Download the newest JARVIS'
   $startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'JARVIS.lnk'
