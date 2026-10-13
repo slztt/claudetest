@@ -1,0 +1,11 @@
+sounddevice
+numpy
+google-genai
+pyautogui
+pillow
+mss
+pywebview
+psutil
+pyperclip
+pygetwindow; sys_platform == "win32"
+# Optional, for speech-to-text on this PC when using a non-Gemini model: faster-whisper
