@@ -98,19 +98,86 @@ NEW_TOOLS = [
 NEW_NAMES = {t["name"] for t in NEW_TOOLS}
 
 
-def search_results(q, n=8):
-    """DuckDuckGo HTML results as (title, snippet, url) tuples."""
-    req = urllib.request.Request("https://html.duckduckgo.com/html/?q=" + quote(q), headers={"User-Agent": UA})
-    page = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+def _get(url, data=None):
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": UA, "Accept-Language": "en-GB,en;q=0.9",
+                                                         "Accept": "text/html,application/xhtml+xml"})
+    return urllib.request.urlopen(req, timeout=8).read(1_500_000).decode("utf-8", "replace")
+
+
+def _ddg_html(q, n):
+    page = _get("https://html.duckduckgo.com/html/", urllib.parse.urlencode({"q": q, "kl": "uk-en"}).encode())
     out = []
     for m in re.finditer(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>', page, re.S):
         href, title, snip = m.groups()
         if "uddg=" in href:
             href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
         out.append((_strip(title), _strip(snip), href))
-        if len(out) >= n:
-            break
-    return out
+    return out[:n]
+
+
+def _ddg_lite(q, n):
+    page = _get("https://lite.duckduckgo.com/lite/", urllib.parse.urlencode({"q": q}).encode())
+    links = re.findall(r"""<a[^>]+href=["']([^"']+)["'][^>]*class=['"]result-link['"][^>]*>(.*?)</a>""", page, re.S) or \
+        re.findall(r"""<a[^>]+class=['"]result-link['"][^>]*href=["']([^"']+)["'][^>]*>(.*?)</a>""", page, re.S)
+    snips = re.findall(r"""class=['"]result-snippet['"][^>]*>(.*?)</td>""", page, re.S)
+    out = []
+    for i, (href, title) in enumerate(links):
+        if "uddg=" in href:
+            href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
+        out.append((_strip(title), _strip(snips[i]) if i < len(snips) else "", href))
+    return out[:n]
+
+
+def _bing(q, n):
+    import base64
+    page = _get("https://www.bing.com/search?" + urllib.parse.urlencode({"q": q, "setlang": "en", "count": str(max(10, n))}))
+    out = []
+    for block in re.findall(r'<li class="b_algo"(.*?)</li>', page, re.S):
+        m = re.search(r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', block, re.S)
+        if not m:
+            continue
+        href, title = htmllib.unescape(m.group(1)), m.group(2)
+        u = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get("u", [""])[0]
+        if "bing.com/ck/" in href and u.startswith("a1"):
+            try:
+                href = base64.urlsafe_b64decode(u[2:] + "=" * (-len(u[2:]) % 4)).decode("utf-8", "replace")
+            except Exception:
+                pass
+        sn = re.search(r'<p[^>]*>(.*?)</p>', block, re.S)
+        out.append((_strip(title), _strip(sn.group(1)) if sn else "", href))
+    return out[:n]
+
+
+SEARCH_ENGINES = (_ddg_html, _bing, _ddg_lite)
+GROUNDED = None          # set by JARVIS: Google Search through Gemini, the last resort when every engine blocks us
+_bad = {}                # engine -> time it last failed, so a blocked engine is skipped for a while
+
+
+def search_results(q, n=8):
+    """Web results as (title, snippet, url) tuples: DuckDuckGo, Bing, DuckDuckGo Lite, then Google through Gemini."""
+    errors = []
+    for eng in SEARCH_ENGINES:
+        nm = eng.__name__.strip("_")
+        if time.time() - _bad.get(nm, 0) < 600:
+            continue
+        try:
+            res = [r for r in eng(q, n) if r[2].startswith("http")]
+            if res:
+                return res
+            errors.append("%s: no results" % nm)
+        except Exception as e:
+            errors.append("%s: %s" % (nm, type(e).__name__))
+        _bad[nm] = time.time()
+    if GROUNDED:
+        try:
+            res = GROUNDED(q, n)
+            if res:
+                return res
+            errors.append("google: no results")
+        except Exception as e:
+            errors.append("google: %s" % str(e)[:80])
+    search_results.last_errors = errors
+    return []
 
 
 def _strip(s):
@@ -157,23 +224,35 @@ class Toolbox:
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=self.cfg["api_key"], http_options={"api_version": "v1beta"})
-        models = list(dict.fromkeys([m for m in ((self.cfg.get("worker_model") or "").strip(), "gemini-2.5-flash", "gemini-2.0-flash") if m]))
+        import jv_models
         last = None
-        for m in models:
+        for m in jv_models.text_models(self.cfg):
             try:
                 r = client.models.generate_content(model=m, contents=prompt, config=types.GenerateContentConfig(
                     tools=[types.Tool(google_search=types.GoogleSearch())], temperature=0.1))
-                names = []
+                names, links = [], []
                 try:
                     for ch in (r.candidates[0].grounding_metadata.grounding_chunks or []):
                         if ch.web and (ch.web.title or ch.web.uri):
                             names.append(ch.web.title or ch.web.uri)
+                            links.append((ch.web.title or ch.web.uri, ch.web.uri or ""))
                 except Exception:
                     pass
+                jv_models.worked(m)
+                self.last_links = links
                 return (r.text or ""), names
             except Exception as e:
                 last = e
         raise last or RuntimeError("no model")
+
+    def grounded_results(self, q, n=8):
+        """Search results from Google through Gemini: [(title, snippet, url)]. The first carries Google's summary as its snippet."""
+        text, _ = self.ground("Search the web thoroughly and give a detailed, factual answer with names, numbers and dates: %s" % q)
+        links = [(t, u) for t, u in getattr(self, "last_links", []) if u.startswith("http")]
+        out = [(t, (text if i == 0 else ""), u) for i, (t, u) in enumerate(links[:n])]
+        if not out and text:
+            out = [("Google summary", text, "https://www.google.com/search?q=" + urllib.parse.quote(q))]
+        return out
 
     # ---- research --------------------------------------------------------------------------------
     def t_research(self, a, job):

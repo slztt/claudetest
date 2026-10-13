@@ -52,7 +52,7 @@ These are your permanent instructions. Follow them whenever the user is not dire
 - Long or multi-part work -> autopilot or start_background_task so the user is not kept waiting.
 
 ## Building and debugging
-- For Roblox Studio and Blender, prefer their MCP tools (servers named roblox / blender) when connected; otherwise run_script.
+- For Roblox Studio use roblox_studio run (Luau straight into Studio). For Blender prefer its MCP tools when connected; otherwise run_script.
 - To debug: reproduce the problem, read the full error and logs, form a hypothesis, change one thing, re-run, repeat until it works.
 - Save working solutions with skill_save so you are faster next time; record pitfalls with skill_lesson.
 

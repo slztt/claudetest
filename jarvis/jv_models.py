@@ -3,7 +3,7 @@
 JARVIS thinks, hears and speaks with Gemini Live (see Brain in jarvis.py). Background research uses the same Gemini key
 through the regular Gemini API.
 """
-import json, time, urllib.error, urllib.parse, urllib.request
+import json, re, time, urllib.error, urllib.parse, urllib.request
 
 # HUD and accessibility settings (saved in config.json next to the original ones)
 UI_CFG = {
@@ -70,7 +70,42 @@ def geocode(place):
     return label, float(r["latitude"]), float(r["longitude"])
 
 
-TEXT_MODELS = ("gemini-2.5-flash", "gemini-2.0-flash")
+TEXT_MODELS = ("gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.0-flash")
+_listed, _listed_at, _good = [], 0.0, ""
+
+
+def _ver(name):
+    m = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+    return float(m.group(1)) if m else 0.0
+
+
+def text_models(cfg):
+    """Text models to try, best first: the user's choice, the last one that worked, the newest Flash models this key can use
+    (asked from Google, so retired names never break research and background jobs), then fixed fallbacks."""
+    global _listed, _listed_at
+    key = (cfg.get("api_key") or "").strip()
+    if key and (not _listed or time.time() - _listed_at > 6 * 3600):
+        try:
+            from google import genai
+            client = genai.Client(api_key=key, http_options={"api_version": "v1beta"})
+            names = []
+            for m in client.models.list():
+                n = (m.name or "").split("/")[-1]
+                acts = [a.lower() for a in (getattr(m, "supported_actions", None) or [])]
+                if acts and not any("generatecontent" in a for a in acts):
+                    continue
+                if "flash" in n and not re.search(r"live|tts|image|audio|embedding|exp|computer|robotics|8b", n):
+                    names.append(n)
+            names.sort(key=lambda n: (-_ver(n), "lite" in n, "preview" in n, len(n)))
+            _listed, _listed_at = names[:6], time.time()
+        except Exception:
+            _listed_at = time.time() - 6 * 3600 + 300    # try listing again in 5 minutes
+    return [m for m in dict.fromkeys([(cfg.get("worker_model") or "").strip(), _good, *_listed, *TEXT_MODELS]) if m]
+
+
+def worked(model):
+    global _good
+    _good = model
 
 
 def gemini_text(cfg, system, prompt, max_tokens=1500, temperature=0.2):
@@ -82,13 +117,12 @@ def gemini_text(cfg, system, prompt, max_tokens=1500, temperature=0.2):
         raise ModelError("Add your Gemini API key in Configuration.")
     client = genai.Client(api_key=key, http_options={"api_version": "v1beta"})
     last = None
-    for m in dict.fromkeys([(cfg.get("worker_model") or "").strip(), *TEXT_MODELS]):
-        if not m:
-            continue
+    for m in text_models(cfg):
         for attempt in range(3):
             try:
                 r = client.models.generate_content(model=m, contents=prompt, config=types.GenerateContentConfig(
                     system_instruction=system, temperature=temperature, max_output_tokens=max_tokens))
+                worked(m)
                 return (r.text or "").strip()
             except Exception as e:
                 last, msg = e, str(e)

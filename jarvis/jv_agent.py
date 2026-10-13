@@ -68,8 +68,8 @@ class Agent:
 
     # ---------------------------------------------------------------------------------------
     def _models(self):
-        first = (self.core.cfg.get("worker_model") or "").strip()
-        return list(dict.fromkeys([m for m in (first,) + FALLBACK_MODELS if m]))
+        import jv_models
+        return jv_models.text_models(self.core.cfg)
 
     def _call(self, client, models, idx, contents, cfg):
         """One generate_content call with retries; moves on to the next model if this one is unavailable."""

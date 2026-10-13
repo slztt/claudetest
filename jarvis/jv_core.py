@@ -56,6 +56,8 @@ def attach(core, here, data, resolve, is_risky, is_hard, all_tools):
     core.agent = Agent(core)
     core.plus = Plus(core, data / "personal")
     core.toolbox = Toolbox(core, resolve, is_risky, is_hard)
+    import jv_tools
+    jv_tools.GROUNDED = core.toolbox.grounded_results
     core._ap_lock = threading.Lock()
     core.all_tools = all_tools
     core.gate = lambda cat, title, detail="", risky=True, hard=False: gate(core, cat, title, detail, risky, hard)
@@ -99,7 +101,7 @@ def jobs_event(core):
 def _job_done(core, j):
     core.ui(jobs_event(core))
     core.audio.sfx("tool")
-    if j.announce and core.cfg.get("announce_jobs", True) and j.kind in ("agent", "script"):
+    if j.announce and core.cfg.get("announce_jobs", True) and j.kind in ("agent", "script", "research", "autopilot"):
         core.ui({"t": "log", "who": "sys", "text": "Background job %s %s: %s" % (j.id, j.status, (j.summary or j.label)[:200])})
         try:
             core.activate()
@@ -112,7 +114,7 @@ def _job_done(core, j):
 def prompt_addendum(core):
     c = core.cfg
     rules = [
-        "ADVANCED WORK. For anything in Roblox Studio, Roblox, Discord, Blender or Google, or any exact or unfamiliar task, work like this: "
+        "ADVANCED WORK. Roblox Studio itself: build and edit with roblox_studio run (Luau), not run_script. For anything in Roblox, Discord, Blender or Google, or any exact or unfamiliar task, work like this: "
         "(1) research(topic, domain) first, then (2) write ONE complete script and run it with run_script, always giving expect_files and/or expect_output, "
         "(3) read the verified result and fix and retry on failure (three attempts at most), then (4) report only what was verified. "
         "Prefer run_script over run_command for anything with more than one step, so the work is exact and repeatable. "

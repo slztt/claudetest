@@ -21,9 +21,25 @@ import jv_auto
 from jv_auto import AUTO_TOOLS
 import jv_mcp
 import jv_power
+import jv_roblox
+import jv_win
 from jv_power import POWER_TOOLS
 from jv_tools import NEW_TOOLS, search_results as jv_tools_search, fetch_text as jv_tools_fetch
 from jv_plus import PLUS_TOOLS
+
+# JARVIS runs without a console (pythonw), so every command it starts would flash a black console window on screen.
+# Start them all hidden unless a caller explicitly asks for a new visible console.
+if platform.system() == "Windows":
+    _RealPopen = subprocess.Popen
+
+    class _QuietPopen(_RealPopen):
+        def __init__(self, *args, **kw):
+            flags = kw.get("creationflags", 0) or 0
+            if not flags & 0x00000010:                 # CREATE_NEW_CONSOLE: the caller wants a visible window
+                kw["creationflags"] = flags | 0x08000000   # CREATE_NO_WINDOW
+            super().__init__(*args, **kw)
+
+    subprocess.Popen = _QuietPopen
 
 # Many home networks have a broken IPv6 route to Google, which makes connections hang until they time out.
 # Prefer IPv4 addresses (falling back to whatever exists) so the voice connection opens quickly.
@@ -213,14 +229,24 @@ def open_app(name, cfg):
         return "No app name given."
     try:
         if system == "Windows":
+            if n in WIN_APPS:
+                try:
+                    os.startfile(WIN_APPS[n])
+                    return "Opened %s." % name
+                except OSError:
+                    pass
+            app = jv_win.find_app(name)                     # the real Start-menu entry, e.g. 'roblox player' -> 'Roblox Player'
+            if app:
+                return "Opened %s." % jv_win.launch(app)
+            exe = shutil.which(n) or shutil.which(n.replace(" ", ""))
+            if exe:
+                subprocess.Popen([exe], creationflags=0x08000000)
+                return "Opened %s." % name
             try:
-                os.startfile(WIN_APPS.get(n, n))
+                os.startfile(n)
                 return "Opened %s." % name
             except OSError:
                 pass
-            r = subprocess.run(["cmd", "/c", "start", "", n], capture_output=True, creationflags=0x08000000)
-            if r.returncode == 0:
-                return "Opened %s." % name
             import pyautogui  # last resort: search the Start menu
             pyautogui.press("win"); time.sleep(0.7)
             pyautogui.write(name, interval=0.03); time.sleep(0.9)
@@ -532,18 +558,24 @@ def _strip_html(s):
     return re.sub(r"\s+", " ", htmllib.unescape(s)).strip()
 
 
-def web_search(q):
-    req = urllib.request.Request("https://html.duckduckgo.com/html/?q=" + quote(q), headers={"User-Agent": UA})
-    page = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
-    out = []
-    for m in re.finditer(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>', page, re.S):
-        href, title, snip = m.groups()
-        if "uddg=" in href:
-            href = urllib.parse.unquote(href.split("uddg=")[1].split("&")[0])
-        out.append("%s: %s (%s)" % (_strip_html(title), _strip_html(snip), href))
-        if len(out) == 5:
-            break
-    return "\n".join(out) or "No results found."
+def web_search(q, core=None):
+    """Google Search through Gemini first (reliable and current), then ordinary search engines as a fallback."""
+    q = (q or "").strip()
+    if not q:
+        return "Give a search query."
+    tb = getattr(core, "toolbox", None)
+    if tb and core.cfg.get("api_key"):
+        try:
+            text, names = tb.ground("Search the web and answer with current, specific facts (names, numbers, dates). Query: %s" % q)
+            if text and text.strip():
+                return text.strip()[:4000] + ("\nSources: " + "; ".join(dict.fromkeys(names))[:600] if names else "")
+        except Exception:
+            pass
+    res = jv_tools_search(q, 6)
+    if res:
+        return "\n".join("%s: %s (%s)" % r for r in res)
+    return ("No results: Google Search through Gemini and the backup search sites all failed (%s). Try read_webpage on a likely site "
+            "directly, or the browser tool." % ", ".join(getattr(jv_tools_search, "last_errors", []) or ["unknown"]))
 
 
 def read_webpage(url):
@@ -1533,9 +1565,21 @@ class Brain:
         if not (self.connected and self.session):
             return False
         self.thinking = True
-        asyncio.run_coroutine_threadsafe(
-            self.session.send_client_content(turns={"parts": [{"text": text}]}, turn_complete=True), self.loop)
+        asyncio.run_coroutine_threadsafe(self._say(self.session, text), self.loop)
         return True
+
+    async def _say(self, sess, text):
+        # Gemini 3.x Live takes mid-conversation text through realtime input; 2.5 takes it as a client turn. Try the right one first.
+        new = MODELS[self.mi % len(MODELS)].split("/")[-1].startswith("gemini-3")
+        ways = [lambda: sess.send_realtime_input(text=text), lambda: sess.send_client_content(turns={"parts": [{"text": text}]}, turn_complete=True)]
+        for way in (ways if new else ways[::-1]):
+            try:
+                await way()
+                return
+            except Exception as e:
+                err = e
+        self.thinking = False
+        self.app.post("log", "sys", "Could not pass a message to Gemini: %s" % str(err)[:160])
 
     def send_image(self, jpeg):
         if not (self.connected and self.session):
@@ -1587,8 +1631,10 @@ class Core:
         self.cal = jv_calendar.Calendar(self, DATA / "personal")              # JARVIS-3: calendar engine + holographic views
         self.auto = jv_auto.Auto(self, DATA)                                  # JARVIS-3: UI Automation, OCR, browser, waits, routines
         self.power = jv_power.Power(self, DATA, jv_tools_search, jv_tools_fetch)  # JARVIS-3: deep research, standing orders, autopilot
+        self.roblox = jv_roblox.Bridge(self)                                 # Roblox Studio control through JARVIS's own plugin
+        self.dialogs = jv_win.DialogWatcher(self)                            # auto-OK error pop-ups during automation
         self.mcp = jv_mcp.Hub(self, DATA)                                     # JARVIS-3: MCP servers (Roblox Studio, Blender, ...)
-        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
+        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + jv_roblox.ROBLOX_TOOLS + jv_win.WIN_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._stats_loop, daemon=True).start()
         threading.Thread(target=self._live_view_loop, daemon=True).start()
@@ -1784,7 +1830,11 @@ class Core:
             "PC through several steps, and off again afterwards); live_view camera or vision to see the user. Read text, buttons and errors carefully "
             "from what you see before acting, and look again after each important action to confirm it worked. " + jv_auto.PROMPT + "You also have deep_research (background, cited reports), autopilot (work on a goal "
             "alone until done), MCP tools named server__tool (Roblox Studio, Blender and more; mcp manages them) and hologram build (project any object "
-            "you design). STANDING ORDERS FROM THE USER (always follow them): " + (self.power.orders() if hasattr(self, "power") else "") + " " + "The holographic HUD: the calendar tool's show action opens the calendar UI on any month/week/day; "
+            "you design). ROBLOX STUDIO: use roblox_studio run to build and edit directly with Luau (never ask the user to install a plugin or "
+            "click things in Studio for you; if status says it is not connected, open Studio yourself and tell them only if a restart of Studio "
+            "is needed). Open apps by their real names, e.g. 'Roblox Player', 'Roblox Studio'. Error pop-ups that appear while you work are "
+            "pressed OK automatically and their text is added to the tool result: read it and fix the cause. "
+            "Discord: send messages through send_message (it drives the Discord app); never ask for or use a Discord user token. STANDING ORDERS FROM THE USER (always follow them): " + (self.power.orders() if hasattr(self, "power") else "") + " " + "The holographic HUD: the calendar tool's show action opens the calendar UI on any month/week/day; "
             "the hologram tool shows the 3D Earth and satellites. " + jv_core.prompt_addendum(self) + " Environment: %s, user folder %s. Known contacts: %s. Current local time: %s. "
             "The user's tasks: %s. The user's notes: %s." % (
                 env, Path.home().name, ", ".join(self.store["contacts"]) or "none yet",
@@ -1851,6 +1901,10 @@ class Core:
                 r = self.auto.handle(name, a) if (not job or name in ("wait_for",) or getattr(job, "opts", {}).get("screen")) else None
                 if r is None:
                     r = self.power.handle(name, a, job)
+                if r is None:
+                    r = self.roblox.handle(name, a)
+                if r is None:
+                    r = self.dialogs.handle(name, a)
                 if r is None and name == "camera_look" and "open" in str(self._hud_js("vision", {"action": "status"})).lower()[:20]:
                     r = self._tool("vision", {"action": "snapshot"})   # the HUD already owns the camera
                 if r is None and (name == "mcp" or "__" in name):
@@ -1862,7 +1916,8 @@ class Core:
                 if r is None:
                     r = self._tool(name, a)
             self.plus.observe(name, a, r, job)
-            return r
+            note = self.dialogs.after_action()
+            return (str(r) + note) if note else r
         except Exception as e:
             self.audio.sfx("error")
             return "Error: %s: %s" % (type(e).__name__, str(e)[:200])
@@ -2078,7 +2133,7 @@ class Core:
                 return "Clipboard set."
             return pyperclip.paste()[:3000] or "The clipboard is empty."
         if name == "web_search":
-            return web_search(str(a.get("query", "")))
+            return web_search(str(a.get("query", "")), self)
         if name == "read_webpage":
             return read_webpage(str(a.get("url", "")))
         if name == "get_weather":
