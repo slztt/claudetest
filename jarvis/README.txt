@@ -165,3 +165,26 @@ categories; search; public holidays; 16-day forecast (after setting a home locat
 free-time finder; .ics import/export for Google Calendar, Outlook and Apple Calendar.
 
 Hologram too fast or too busy? Configuration > Accessibility > Hologram speed, or Reduce motion.
+
+JARVIS-3: CAMERA HUD AND HAND CONTROL
+Say "open the camera" (or press O). JARVIS tracks your face (478-point mesh, expression, where you are looking), both hands
+(21 joints each, gestures) and your body (pose) in real time, entirely on this PC. Overlays: off, minimal, wireframe or full;
+he will offer the wireframe if you don't say. "What am I doing?" -> he reads the tracking; "look at this" -> he sees the image.
+Hands: your index fingertip is a cursor. Pinch to grab a panel and move it, pinch quickly to click, pinch with both hands to
+resize. Hold an open palm to stop him talking, thumbs up / down to authorise / deny a card, point up to make him listen,
+victory sign for a snapshot.
+
+JARVIS-3: PANELS ON YOUR SCREEN
+"Put the new Daft Punk video on", "show my system stats", "add a clock with London, Tokyo and LA", "show the weather in Rome",
+"chart my spending", "bitcoin and ethereum prices", "tech news", "my agenda", "a 25 minute timer", "pin a note that says...".
+Panels: YouTube, any video or image (also local files), web pages, live CPU/RAM/GPU/network, top processes, world clock,
+weather, notes (markdown), quotes, timer, stopwatch, line/bar/pie charts, crypto prices, news headlines, agenda, camera.
+Move them by hand, mouse or voice ("move it left", "make it fullscreen", "pause the video"); they come back after a restart.
+
+JARVIS-3: A CLEANER INTERFACE
+Only the microphone, transcript and settings buttons stay on screen (plus stop while he is speaking). Everything else opens
+when you ask: "open the calendar", "show the Earth", "open the Control Centre", "open the camera" (keys: C, G, J, O).
+Empty side panels hide themselves.
+
+Speech recognition now uses your NVIDIA card when its CUDA libraries are installed (JARVIS.bat repair adds them) and falls
+back to the processor automatically otherwise.

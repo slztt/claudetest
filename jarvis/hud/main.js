@@ -1,6 +1,8 @@
 import { createScene } from './scene.js';
 import { GROUPS } from './globe.js';
 import { createCalendar } from './calendar.js';
+import { createVision } from './vision.js';
+import { createPanels } from './panels.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -81,6 +83,7 @@ function hint() {
 /* ---------- panels ---------- */
 function list(el, items, empty, opts = {}) {
   const box = $(el);
+  const pnl = box.closest('.panel'); if (pnl) pnl.classList.toggle('empty', !items.length);   // empty panels stay out of the way
   if (!items.length) { box.innerHTML = `<div class="row dim"><span>${esc(empty)}</span></div>`; return; }
   box.innerHTML = items.slice(0, opts.max || 4).map((t, i) =>
     `<div class="row"><span title="${esc(t)}">${esc(t)}</span>${opts.kind ? `<b class="x" data-k="${opts.kind}" data-i="${i}">×</b>` : ''}</div>`).join('');
@@ -109,6 +112,7 @@ function meter(id, pct, label) {
   m.querySelector('b').textContent = label;
 }
 function stats(d) {
+  window.dispatchEvent(new CustomEvent('jv-stats', { detail: d }));
   meter('#m-cpu', d.cpu, Math.round(d.cpu) + '%');
   meter('#m-ram', d.ram, Math.round(d.ram) + '%');
   if (d.bat == null) meter('#m-bat', 100, 'AC');
@@ -391,6 +395,8 @@ window.addEventListener('keydown', (e) => {
     else call('stop');
   }
   else if (!typing && (e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey) { e.preventDefault(); cal.toggle(); }
+  else if (!typing && (e.key === 'o' || e.key === 'O') && !e.ctrlKey) { e.preventDefault(); HUD.ui({ action: vision.open ? 'close' : 'open', target: 'camera' }); }
+  else if (!typing && (e.key === 'j' || e.key === 'J') && !e.ctrlKey) { e.preventDefault(); window.__cc && window.__cc.open(!window.__cc.isOpen); }
   else if (!typing && (e.key === 'g' || e.key === 'G')) { e.preventDefault(); setMode(scene.mode === 'globe' ? 'core' : 'globe'); }
   else if (!typing && scene.mode === 'globe' && globeKey(e)) e.preventDefault();
   else if (e.key === 'F11') { e.preventDefault(); call('fullscreen'); }
@@ -452,7 +458,7 @@ window.HUD = {
       case 'brain': setBrain(ev); break;
       case 'settings': loadSettings(ev.settings); break;
       case 'calendar': if (ev.close) cal.close(); else cal.open(ev.date, ev.view); break;
-      case 'calendar_changed': cal.refresh(); break;
+      case 'calendar_changed': cal.refresh(); window.dispatchEvent(new Event('jv-cal-changed')); break;
       case 'auto': setAuto(ev.on); break;
       case 'approval_clear': pending = null; $('#approve').classList.remove('show'); break;
       case 'thought': { const h = $('#hist'), p = document.createElement('p'); p.className = 'sys'; p.textContent = '💭 ' + ev.text.slice(-400); h.appendChild(p); h.scrollTop = h.scrollHeight; break; }
@@ -512,8 +518,7 @@ function demo() {
 }
 
 /* ---------- calendar ---------- */
-const cal = createCalendar({ call, hasBridge: () => !!api(), esc, act, toast, say, onOpen: (on) => { $('#b-cal').classList.toggle('on', on); $('#b-cal').setAttribute('aria-pressed', String(on)); } });
-$('#b-cal').onclick = () => cal.toggle();
+const cal = createCalendar({ call, hasBridge: () => !!api(), esc, act, toast, say, onOpen: () => {} });
 window.__cal = cal;
 
 /* =====================================================================================
@@ -526,12 +531,9 @@ function setMode(m) {
   if (m !== 'model') holoLabels([]);
   const on = m === 'globe';
   document.body.classList.toggle('globe', on);
-  $('#b-globe').classList.toggle('on', on);
-  $('#b-globe').setAttribute('aria-pressed', String(on));
   if (on) { globe.ensureGroups(); globeUI(); act('HOLOGRAM · EARTH'); }
   else if (m === 'core') act('HOLOGRAM · CORE');
 }
-$('#b-globe').onclick = () => setMode(scene.mode === 'globe' ? 'core' : 'globe');
 $('#g-core').onclick = () => setMode('core');
 
 const fmtLat = (v) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'N' : 'S'}`;
@@ -741,6 +743,45 @@ window.HUD.hologram = function (c) {
   return 'Unknown hologram action: ' + a;
 };
 
+
+/* =====================================================================================
+   Camera HUD + floating panels moved by hand
+   ===================================================================================== */
+const vision = createVision({
+  call, act, toast, say,
+  onHands: (h) => panels.pointer(h),
+  hooks: { speaking: () => S.state === 'SPEAKING', stop: () => call('stop'), approvalShown: () => pending != null, approve: (ok) => answer(ok), wake: () => call('wake') },
+});
+const panels = createPanels({ call, hasBridge: () => !!api(), esc, act, toast, say, vision });
+window.HUD.panel = (c) => panels.command(c || {});
+window.HUD.vision = function (c) {
+  const a = String((c && c.action) || '').toLowerCase(), v = String((c && c.value) || '').toLowerCase();
+  if (a === 'open') { if (!vision.open) panels.add({ kind: 'camera', title: 'Optical analysis', x: 0.52, y: 0.1, w: 0.42, h: 0.6, style: v || undefined }); return 'Camera open: tracking face, hands and body. ' + (v ? '' : 'Ask whether they would like the wireframe overlay.'); }
+  if (a === 'close') { panels.closeKind('camera'); return 'Camera closed.'; }
+  if (a === 'style') return vision.setStyle(v) ? 'Overlay set to ' + v + '.' : 'Use off, minimal, wireframe or full.';
+  if (a === 'track') { vision.setTrack(v); return 'Tracking ' + (v || 'all') + '.'; }
+  if (a === 'hand_control') { vision.setHandControl(!/off|false|no/.test(v)); return 'Hand control ' + (/off|false|no/.test(v) ? 'off.' : 'on: pinch to grab panels, quick pinch to click, two hands to resize.'); }
+  if (a === 'snapshot') return vision.open ? vision.snapshot(false) : 'The camera is closed; open it first.';
+  return vision.status();
+};
+window.HUD.ui = function (c) {
+  const open = String((c && c.action) || 'open') !== 'close', t = String((c && c.target) || '').toLowerCase().replace(/[\s-]+/g, '_');
+  if (t === 'calendar') { open ? cal.open() : cal.close(); return 'Calendar ' + (open ? 'open.' : 'closed.'); }
+  if (t === 'earth' || t === 'globe') { setMode(open ? 'globe' : 'core'); return open ? 'Holographic Earth online.' : 'Back to the core.'; }
+  if (t === 'camera' || t === 'vision') return window.HUD.vision({ action: open ? 'open' : 'close' });
+  if (t === 'control_centre' || t === 'control_center') { window.__cc && window.__cc.open(open); return 'Control Centre ' + (open ? 'open.' : 'closed.'); }
+  if (t === 'settings' || t === 'configuration') { openSettings(open); return 'Configuration ' + (open ? 'open.' : 'closed.'); }
+  if (t === 'transcript') { $('#hist').classList.toggle('show', open); return 'Transcript ' + (open ? 'shown.' : 'hidden.'); }
+  if (t === 'panels') { $('#panels').style.display = open ? '' : 'none'; return 'Panels ' + (open ? 'shown.' : 'hidden.'); }
+  if (t === 'core') { setMode('core'); cal.close(); return 'Back to the core.'; }
+  return 'Unknown HUD part: ' + t;
+};
+
+/* keyboard focus rings only for keyboard users (never on click) */
+window.addEventListener('keydown', (e) => { if (e.key === 'Tab') document.body.classList.add('kbnav'); }, true);
+window.addEventListener('pointerdown', () => document.body.classList.remove('kbnav'), true);
+
 start();
+setTimeout(() => panels.restore(), 3200);
 
 window.__hud = { call, esc, put, S };

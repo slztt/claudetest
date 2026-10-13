@@ -131,6 +131,7 @@ const chip = document.createElement('div'); chip.id = 'jobchip'; document.body.a
 let tab = 'jobs', ov = null, jobs = [], dom = 'all', cur = null, openJob = null;
 const settings = () => S.settings || {};
 
+window.__cc = { open: (on, p) => open(on, p), get isOpen() { return root.classList.contains('open'); } };
 function open(on, p) {
   root.classList.toggle('open', on); ccb.classList.toggle('on', on);
   if (on) { $('#settings').classList.remove('open'); show(p || tab); refresh(); }

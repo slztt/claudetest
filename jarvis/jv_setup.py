@@ -244,12 +244,16 @@ def setup(local="ask", quiet=False):
     if not state.get("whisper_ok"):
         say("step", "Preparing local speech recognition (faster-whisper)")
         try:
-            fw = jv_auto.ensure("faster-whisper", "faster_whisper")
-            size = "small" if (info["vram_gb"] or 0) >= 4 else "base"
-            fw.WhisperModel(size, device="auto", compute_type="int8")
+            if info["vram_gb"] and IS_WIN:
+                # GPU speech recognition needs NVIDIA's CUDA 12 libraries; they come as pip packages (about 1 GB, optional)
+                try:
+                    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"], timeout=1800)
+                except Exception:
+                    pass
+            jv_models.local_transcribe(b"\x00\x00" * 16000)
             state["whisper_ok"] = True
             save(STATE, state)
-            say("ok", "Speech recognition ready (%s)" % size)
+            say("ok", "Speech recognition ready (on the %s)" % ("graphics card" if jv_models._whisper.get("device") == "cuda" else "processor"))
         except Exception as e:
             say("warn", "Speech recognition not ready (%s); it will be retried when first used." % str(e)[:120])
 

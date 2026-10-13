@@ -484,22 +484,67 @@ def _tmp_wav():
 _whisper = {"model": None, "failed": False}
 
 
-def local_transcribe(pcm16k):
-    """faster-whisper on this PC (pip install faster-whisper). Returns text or raises."""
-    if _whisper["failed"]:
-        raise ModelError("faster-whisper is not installed.")
-    if _whisper["model"] is None:
+def _cuda_dll_dirs():
+    """Make pip-installed NVIDIA libraries (nvidia-cublas-cu12, nvidia-cudnn-cu12) visible to ctranslate2 on Windows."""
+    if not IS_WIN:
+        return
+    import importlib.util
+    for mod in ("nvidia.cublas", "nvidia.cudnn", "nvidia.cuda_runtime"):
         try:
-            import jv_auto
-            WhisperModel = jv_auto.ensure("faster-whisper", "faster_whisper").WhisperModel   # installed on first use
+            spec = importlib.util.find_spec(mod)
         except Exception:
-            _whisper["failed"] = True
-            raise ModelError("faster-whisper could not be installed (pip install faster-whisper).")
-        # small.en-sized accuracy at base speed on CPU; the GPU is used when CUDA is available
-        _whisper["model"] = WhisperModel("small" if (hardware().get("vram_gb") or 0) >= 4 else "base", device="auto", compute_type="int8")
+            spec = None
+        for root in (spec.submodule_search_locations if spec and spec.submodule_search_locations else []):
+            d = os.path.join(root, "bin")
+            if os.path.isdir(d):
+                try:
+                    os.add_dll_directory(d)
+                except Exception:
+                    pass
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+
+
+def _whisper_load(device):
+    import jv_auto
+    WhisperModel = jv_auto.ensure("faster-whisper", "faster_whisper").WhisperModel   # installed on first use
+    size = "small" if (hardware().get("vram_gb") or 0) >= 4 else "base"
+    if device == "cuda":
+        _cuda_dll_dirs()
+        m = WhisperModel(size, device="cuda", compute_type="float16")
+    else:
+        m = WhisperModel(size, device="cpu", compute_type="int8", cpu_threads=max(2, (os.cpu_count() or 4) // 2))
+    # the CUDA libraries are only loaded on the first real transcription, so prove the device works right now
+    list(m.transcribe(np.zeros(16000, np.float32), beam_size=1)[0])
+    return m
+
+
+def local_transcribe(pcm16k):
+    """faster-whisper on this PC: the GPU when its CUDA 12 libraries are present, otherwise the CPU. Returns text or raises."""
+    if _whisper["failed"]:
+        raise ModelError("faster-whisper could not be installed (pip install faster-whisper).")
+    if _whisper["model"] is None:
+        last = None
+        for device in (["cuda", "cpu"] if (hardware().get("vram_gb") or 0) >= 2 else ["cpu"]):
+            try:
+                _whisper["model"], _whisper["device"] = _whisper_load(device), device
+                break
+            except ImportError:
+                _whisper["failed"] = True
+                raise ModelError("faster-whisper could not be installed (pip install faster-whisper).")
+            except Exception as e:   # e.g. "Library cublas64_12.dll is not found": fall back to the CPU
+                last = e
+        if _whisper["model"] is None:
+            raise ModelError("Speech recognition could not start: %s" % str(last)[:200])
     a = np.frombuffer(pcm16k, np.int16).astype(np.float32) / 32768
-    segs, _ = _whisper["model"].transcribe(a, beam_size=1, vad_filter=True)
-    return " ".join(s.text for s in segs).strip()
+    try:
+        segs, _ = _whisper["model"].transcribe(a, beam_size=1, vad_filter=True)
+        return " ".join(s.text for s in segs).strip()
+    except Exception as e:
+        if _whisper.get("device") == "cuda":   # the GPU path broke mid-session: switch to the CPU and retry once
+            _whisper["model"], _whisper["device"] = _whisper_load("cpu"), "cpu"
+            segs, _ = _whisper["model"].transcribe(a, beam_size=1, vad_filter=True)
+            return " ".join(s.text for s in segs).strip()
+        raise
 
 
 def gemini_transcribe(key, wav):
@@ -631,7 +676,7 @@ class ChatBrain:
                 last = e
         if mode == "off":
             raise ModelError("Voice input is off. Type to talk, or change Voice input in Configuration.")
-        raise ModelError("No speech-to-text available%s. Add a Gemini key, pick OpenAI or Groq, or pip install faster-whisper." % (
+        raise ModelError("No speech-to-text available%s. Add a Gemini key, pick OpenAI or Groq, or run JARVIS.bat repair." % (
             " (%s)" % last if last else ""))
 
     # ---- the thinking loop ----

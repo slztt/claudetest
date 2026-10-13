@@ -146,6 +146,30 @@ TOOLS = [
     _t("web_search", "Search the web for current information, news, facts.", {"query": (S_, "Search query")}, ["query"]),
     _t("read_webpage", "Fetch a web page and read its text.", {"url": (S_, "Full https URL")}, ["url"]),
     _t("get_weather", "Get the current weather and forecast.", {"location": (S_, "City name; empty for the user's own location")}),
+    _t("panel", "Put things on the user's screen as floating holographic panels they can move and resize with the mouse or their HANDS (when the "
+       "camera is open: pinch to grab, two hands to resize). add with kind: youtube (query = what to search, or url), video (url or file path), web "
+       "(url), image (url or path), stats (live CPU/RAM/GPU/network), processes, clock (zones = comma-separated time zones), weather (place, empty = "
+       "home), note (content in markdown), quote, timer (seconds), stopwatch, chart (data JSON {type: line|bar|pie, labels: [...], series: [{name, "
+       "values: [...]}]}), crypto (coins, e.g. bitcoin,ethereum), news (query, or feed url), agenda (the week's calendar), camera. Optional x, y "
+       "(pixels or 0-1 fractions), w, h, title. list shows what is open (ids). close / focus / fullscreen / update by id (or the newest of a kind); "
+       "move with position left|right|top|bottom|center or x,y; resize with w,h (scale factor <=3 or pixels); play, pause, stop, mute, unmute, "
+       "volume (value 0-100), seek (value seconds) for youtube and video; clear removes all (or all of one kind).",
+       {"action": (S_, "add, list, close, clear, move, resize, fullscreen, focus, update, play, pause, stop, mute, unmute, volume or seek"),
+        "kind": (S_, "Panel kind (see description)"), "id": (S_, "Panel id from add or list"), "title": (S_, "Panel title"),
+        "url": (S_, "Web address, or a file path for video/image"), "query": (S_, "youtube: what to search for; news: topic"),
+        "content": (S_, "note/quote: markdown text"), "data": (S_, "chart: JSON data; clock: zones; crypto: coin ids"),
+        "seconds": (N_, "timer length"), "place": (S_, "weather: a place name"), "position": (S_, "move: left, right, top, bottom or center"),
+        "x": (N_, "Left edge"), "y": (N_, "Top edge"), "w": (N_, "Width"), "h": (N_, "Height"), "value": (N_, "volume / seek value")}, ["action"]),
+    _t("vision", "The camera HUD (optical analysis). open shows the camera as a panel and starts real-time tracking of the user's face (mesh, "
+       "expression, head direction), hands (joints, gestures, pinch) and body (pose); everything runs on this PC. Hand control lets them move "
+       "panels by pinching. style sets the overlay: off, minimal (brackets and labels), wireframe (face mesh, hand and body skeletons) or full "
+       "(plus scan line and readouts). If they did not say which overlay they want, ask whether they would like the wireframe. track chooses "
+       "face, hands, body or all. status says what is being tracked right now (faces, expression, gestures, posture). snapshot lets you SEE the "
+       "camera image. hand_control on/off. close stops the camera.",
+       {"action": (S_, "open, close, style, track, status, snapshot or hand_control"), "value": (S_, "style: off|minimal|wireframe|full; track: face,hands,body or all; hand_control: on|off")}, ["action"]),
+    _t("hud", "Open or close parts of the HUD that have no buttons (the interface is kept clean, so these open by voice): calendar, earth, "
+       "camera, control_centre (jobs, skills, access), settings, transcript, panels (show / hide all floating panels), core (back to the core view).",
+       {"action": (S_, "open or close"), "target": (S_, "calendar, earth, camera, control_centre, settings, transcript, panels or core")}, ["action", "target"]),
     _t("hologram", "Drive the holographic 3D HUD on the user's screen. show_earth brings up the 3D holographic Earth with live satellites; "
        "show_core returns to the core. focus_place flies the globe to a city or place and pins it. track_satellite locks onto a satellite "
        "(ISS, Hubble, Tiangong, NOAA 19, a GPS or Starlink name...) and shows its orbit, ground track and footprint; satellite_view rides along "
@@ -1542,12 +1566,37 @@ class Core:
         except Exception:
             return
         psutil.cpu_percent(None)
+        net0, t0, gpu, n = psutil.net_io_counters(), time.time(), None, 0
+        has_smi = bool(shutil.which("nvidia-smi"))
         while True:
-            time.sleep(2.5)
+            time.sleep(1.0)
+            n += 1
             try:
                 b = psutil.sensors_battery()
-                self.stats = {"t": "stats", "cpu": psutil.cpu_percent(None), "ram": psutil.virtual_memory().percent,
-                              "bat": b.percent if b else None, "plug": bool(b and b.power_plugged)}
+                net1, t1 = psutil.net_io_counters(), time.time()
+                dt_ = max(0.2, t1 - t0)
+                down, up = (net1.bytes_recv - net0.bytes_recv) * 8 / dt_, (net1.bytes_sent - net0.bytes_sent) * 8 / dt_
+                net0, t0 = net1, t1
+                if has_smi and n % 3 == 0:
+                    try:
+                        r = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True,
+                                           timeout=4, creationflags=0x08000000 if IS_WIN else 0)
+                        gpu = float(r.stdout.strip().splitlines()[0])
+                    except Exception:
+                        gpu = None
+                st = {"t": "stats", "cpu": psutil.cpu_percent(None), "ram": psutil.virtual_memory().percent,
+                      "bat": b.percent if b else None, "plug": bool(b and b.power_plugged), "gpu": gpu, "down": down, "up": up}
+                if n % 3 == 0:
+                    procs = []
+                    for p in psutil.process_iter(["name", "cpu_percent", "memory_info"]):
+                        try:
+                            procs.append((p.info["name"] or "?", p.info["cpu_percent"] or 0.0, int((p.info["memory_info"].rss if p.info["memory_info"] else 0) / 2 ** 20)))
+                        except Exception:
+                            pass
+                    st["procs"] = sorted(procs, key=lambda x: (-x[1], -x[2]))[:8]
+                elif self.stats.get("procs"):
+                    st["procs"] = self.stats["procs"]
+                self.stats = st
             except Exception:
                 pass
 
@@ -1677,6 +1726,8 @@ class Core:
                 r = self.auto.handle(name, a) if (not job or name in ("wait_for",) or getattr(job, "opts", {}).get("screen")) else None
                 if r is None:
                     r = self.power.handle(name, a, job)
+                if r is None and name == "camera_look" and "open" in str(self._hud_js("vision", {"action": "status"})).lower()[:20]:
+                    r = self._tool("vision", {"action": "snapshot"})   # the HUD already owns the camera
                 if r is None and (name == "mcp" or "__" in name):
                     r = self.mcp.handle(name, a)
                 if r is None:
@@ -1728,10 +1779,61 @@ class Core:
         except Exception as e:
             return "HUD error: %s" % str(e)[:160]
 
+    def _hud_js(self, fn, cmd, timeout_note="The HUD is not open yet."):
+        if not (self.loaded and self.window):
+            return timeout_note
+        try:
+            with self._ui_lock:
+                r = self.window.evaluate_js("window.HUD&&HUD.%s?HUD.%s(%s):'HUD not ready'" % (fn, fn, json.dumps(cmd)))
+            return r if r is not None else "Done."
+        except Exception as e:
+            return "HUD error: %s" % str(e)[:160]
+
+    def panel(self, a):
+        cmd = {k: v for k, v in (a or {}).items() if v not in (None, "")}
+        kind = str(cmd.get("kind") or "").lower()
+        if str(cmd.get("action", "add")).lower() in ("add", "show"):
+            if kind == "youtube" and not cmd.get("url") and cmd.get("query"):
+                hit = youtube_search(str(cmd["query"]))
+                if not hit:
+                    return "No YouTube results for %s." % cmd["query"]
+                cmd["videoId"] = hit[0]
+                cmd["title"] = cmd.get("title") or hit[1]
+            if kind in ("video", "image") and cmd.get("url") and not re.match(r"^https?://", str(cmd["url"])):
+                f = resolve_path(str(cmd["url"]))
+                if not f.exists():
+                    return "No file at %s." % f
+                token = "%08x" % (abs(hash(str(f))) % 0xffffffff)
+                MEDIA_FILES[token] = f
+                cmd["url"] = "media/%s/%s" % (token, urllib.parse.quote(f.name))
+                cmd.setdefault("title", f.stem)
+            if kind in ("clock", "crypto") and isinstance(cmd.get("data"), str):
+                cmd["data"] = [x.strip() for x in cmd["data"].split(",") if x.strip()]
+            if kind == "chart" and isinstance(cmd.get("data"), str):
+                try:
+                    cmd["data"] = json.loads(cmd["data"])
+                except Exception:
+                    return "The chart data is not valid JSON."
+        return str(self._hud_js("panel", cmd))
+
     def _tool(self, name, a):
         c = self.comp
         if name == "hologram":
             return self.hologram(a)
+        if name == "panel":
+            return self.panel(a)
+        if name == "hud":
+            return str(self._hud_js("ui", {"action": str(a.get("action", "open")), "target": str(a.get("target", ""))}))
+        if name == "vision":
+            act = str(a.get("action", "")).lower()
+            r = self._hud_js("vision", {"action": act, "value": str(a.get("value", "") or "")})
+            if act == "snapshot":
+                if isinstance(r, str) and r.startswith("data:image"):
+                    import base64
+                    ok = self.brain.send_image(base64.b64decode(r.split(",", 1)[1]))
+                    return "Camera image shared with you; describe or act on what you see." if ok else "Could not share the image."
+                return str(r)
+            return str(r)
         if name == "set_timer":
             sec = float(a.get("seconds", 0))
             if sec <= 0:
@@ -2082,6 +2184,70 @@ class Api:
         except Exception as e:
             return "Voice error: %s" % str(e)[:200]
 
+    # ---- camera HUD and panels ----
+    def camera_stream(self, on):
+        if on:
+            return CAMERA.start()
+        CAMERA.stop()
+        return True
+
+    def vision_frame(self, b64):
+        import base64
+        try:
+            return self._c.brain.send_image(base64.b64decode(b64))
+        except Exception:
+            return False
+
+    def weather_panel(self, place=""):
+        c = self._c.cfg
+        try:
+            if place:
+                hit = jv_models.geocode(str(place))
+                if not hit:
+                    return {"error": "No place called %s." % place}
+                name, lat, lon = hit
+            elif str(c.get("home_lat", "")) != "":
+                name, lat, lon = c.get("home_name") or "Home", c["home_lat"], c["home_lon"]
+            else:
+                return {"error": "Set a home location (say: set my home to <town>), or ask for the weather in a place."}
+            j = jv_models._http("https://api.open-meteo.com/v1/forecast?latitude=%s&longitude=%s&current=temperature_2m,weather_code,wind_speed_10m"
+                                "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=7" % (lat, lon), timeout=12)
+            d = j["daily"]
+            days = [{"day": time.strftime("%a %d", time.strptime(t, "%Y-%m-%d")), "code": d["weather_code"][i], "max": d["temperature_2m_max"][i],
+                     "min": d["temperature_2m_min"][i], "rain": (d.get("precipitation_probability_max") or [None] * 9)[i]} for i, t in enumerate(d["time"])]
+            cur = j["current"]
+            return {"name": name.split(",")[0], "current": {"temp": cur["temperature_2m"], "code": cur["weather_code"], "wind": cur["wind_speed_10m"]}, "daily": days}
+        except Exception as e:
+            return {"error": "Weather unavailable: %s" % str(e)[:120]}
+
+    def crypto_prices(self, ids, currency="usd"):
+        try:
+            ids = [re.sub(r"[^a-z0-9-]", "", str(i).lower()) for i in (ids or [])][:15]
+            cur = re.sub(r"[^a-z]", "", str(currency or "usd").lower()) or "usd"
+            j = jv_models._http("https://api.coingecko.com/api/v3/simple/price?ids=%s&vs_currencies=%s&include_24hr_change=true" % (",".join(ids), cur), timeout=12)
+            rows = [{"id": k, "price": v.get(cur, 0), "change": v.get(cur + "_24h_change") or 0} for k, v in j.items()]
+            return {"rows": sorted(rows, key=lambda r: ids.index(r["id"]) if r["id"] in ids else 99), "currency": cur}
+        except Exception as e:
+            return {"error": "Prices unavailable: %s" % str(e)[:120]}
+
+    def news_items(self, feed="", query=""):
+        import xml.etree.ElementTree as ET
+        url = str(feed or "").strip() or ("https://news.google.com/rss/search?hl=en-GB&gl=GB&ceid=GB:en&q=" + quote(query) if query else "https://feeds.bbci.co.uk/news/world/rss.xml")
+        if not url.startswith(("http://", "https://")):
+            return {"error": "Bad feed address."}
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            root = ET.fromstring(urllib.request.urlopen(req, timeout=12).read())
+            items = []
+            for it in root.iter("item"):
+                items.append({"title": (it.findtext("title") or "").strip(), "link": (it.findtext("link") or "").strip(),
+                              "date": (it.findtext("pubDate") or "")[:22], "source": (it.findtext("source") or "").strip()})
+                if len(items) >= 25:
+                    break
+            return {"items": items}
+        except Exception as e:
+            return {"error": "News unavailable: %s" % str(e)[:120]}
+
     # ---- MCP servers ----
     def mcp_status(self):
         return {"servers": self._c.mcp.status_rows(), "presets": {k: {"label": v["label"], "note": v["note"]} for k, v in jv_mcp.PRESETS.items()},
@@ -2240,6 +2406,65 @@ class Api:
 
 
 MODEL_FILES = {}
+MEDIA_FILES = {}
+MEDIA_EXT = {".mp4", ".webm", ".mov", ".m4v", ".mkv", ".mp3", ".wav", ".ogg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"}
+ML_MODELS = {  # MediaPipe models for the camera HUD: downloaded once, then served locally (works offline afterwards)
+    "face_landmarker.task": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    "gesture_recognizer.task": "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+    "pose_landmarker_lite.task": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+}
+
+
+def youtube_search(q):
+    """First YouTube result for a search: (video id, title) or None. No API key needed."""
+    req = urllib.request.Request("https://www.youtube.com/results?search_query=" + quote(q), headers={"User-Agent": UA, "Accept-Language": "en"})
+    page = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "replace")
+    for m in re.finditer(r'"videoRenderer":\{"videoId":"([\w-]{11})".*?"title":\{"runs":\[\{"text":"(.*?)"\}', page):
+        return m.group(1), json.loads('"%s"' % m.group(2))
+    m = re.search(r'"videoId":"([\w-]{11})"', page)
+    return (m.group(1), q) if m else None
+
+
+class CameraStream:
+    """Fallback camera for web engines that refuse getUserMedia: OpenCV frames as an MJPEG stream on the HUD server."""
+
+    def __init__(self):
+        self.cap, self.frame, self.on, self.lock = None, None, False, threading.Lock()
+
+    def start(self):
+        if self.on:
+            return True
+        try:
+            import jv_auto
+            cv2 = jv_auto.ensure("opencv-python", "cv2")
+        except Exception:
+            return False
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) if IS_WIN else cv2.VideoCapture(0)
+        if not cap or not cap.isOpened():
+            return False
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.cap, self.on = cap, True
+
+        def run():
+            while self.on:
+                ok, img = self.cap.read()
+                if ok:
+                    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    if ok:
+                        with self.lock:
+                            self.frame = jpg.tobytes()
+                else:
+                    time.sleep(0.05)
+            self.cap.release()
+        threading.Thread(target=run, daemon=True).start()
+        return True
+
+    def stop(self):
+        self.on = False
+
+
+CAMERA = CameraStream()
 
 
 def serve_hud():
@@ -2248,7 +2473,7 @@ def serve_hud():
     mimetypes.add_type("text/javascript", ".js")  # Windows sometimes maps .js to text/plain, which blocks modules
 
     class Quiet(http.server.SimpleHTTPRequestHandler):
-        extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".mjs": "text/javascript"}
+        extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, ".js": "text/javascript", ".mjs": "text/javascript", ".wasm": "application/wasm"}
 
         def log_message(self, *a):
             pass
@@ -2257,7 +2482,80 @@ def serve_hud():
             self.send_header("Cache-Control", "no-store")
             super().end_headers()
 
+        def _bytes(self, data, ctype="application/octet-stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_HEAD(self):
+            if self.path.startswith("/mlmodel/"):
+                name = self.path.split("/")[2] if len(self.path.split("/")) > 2 else ""
+                if name in ML_MODELS:
+                    self.send_response(200)
+                    self.end_headers()
+                    return
+                self.send_error(404)
+                return
+            super().do_HEAD()
+
         def do_GET(self):
+            if self.path.startswith("/mlmodel/"):
+                name = self.path.split("/")[2].split("?")[0] if len(self.path.split("/")) > 2 else ""
+                if name in ML_MODELS:
+                    f = DATA / "models" / name
+                    try:
+                        if not f.exists():
+                            f.parent.mkdir(parents=True, exist_ok=True)
+                            req = urllib.request.Request(ML_MODELS[name], headers={"User-Agent": "JARVIS"})
+                            with urllib.request.urlopen(req, timeout=120) as r:
+                                f.with_suffix(".part").write_bytes(r.read())
+                            f.with_suffix(".part").replace(f)
+                        return self._bytes(f.read_bytes())
+                    except Exception:
+                        pass
+                self.send_error(404)
+                return
+            if self.path.startswith("/camera.mjpg"):
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=jvframe")
+                self.end_headers()
+                try:
+                    last = None
+                    while CAMERA.on:
+                        with CAMERA.lock:
+                            fr = CAMERA.frame
+                        if fr is not None and fr is not last:
+                            last = fr
+                            self.wfile.write(b"--jvframe\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(fr) + fr + b"\r\n")
+                        time.sleep(0.03)
+                except Exception:
+                    pass
+                return
+            if self.path.startswith("/media/"):
+                parts = self.path.split("/")
+                f = MEDIA_FILES.get(parts[2] if len(parts) > 2 else "")
+                if f is not None and f.suffix.lower() in MEDIA_EXT and f.exists():
+                    import mimetypes as _mt
+                    data = f.read_bytes()
+                    rng = self.headers.get("Range")
+                    ctype = _mt.guess_type(f.name)[0] or "application/octet-stream"
+                    if rng and rng.startswith("bytes="):   # videos need range requests to seek
+                        a, _, b = rng[6:].partition("-")
+                        a = int(a or 0)
+                        b = min(len(data) - 1, int(b) if b else a + 4 * 2 ** 20)
+                        self.send_response(206)
+                        self.send_header("Content-Type", ctype)
+                        self.send_header("Content-Range", "bytes %d-%d/%d" % (a, b, len(data)))
+                        self.send_header("Content-Length", str(b - a + 1))
+                        self.send_header("Accept-Ranges", "bytes")
+                        self.end_headers()
+                        self.wfile.write(data[a:b + 1])
+                        return
+                    return self._bytes(data, ctype)
+                self.send_error(404)
+                return
             # 3D model files the hologram tool was asked to show (only files registered by JARVIS, only model types)
             if self.path.startswith("/model/"):
                 parts = self.path.split("/")
