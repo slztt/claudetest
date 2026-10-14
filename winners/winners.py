@@ -24,7 +24,6 @@ import jv_power
 import jv_roblox
 import jv_homework
 import jv_video
-import jv_draw
 import jv_win
 from jv_power import POWER_TOOLS
 from jv_tools import NEW_TOOLS, search_results as jv_tools_search, fetch_text as jv_tools_fetch
@@ -1675,9 +1674,8 @@ class Core:
         self.dialogs = jv_win.DialogWatcher(self)                            # auto-OK error pop-ups during automation
         self.homework = jv_homework.Homework(self)                           # Homework tab: answers in text and voice
         self.video = jv_video.Video(self, resolve_path)                      # video editing (FFmpeg) and CapCut hand-off
-        self.draws = jv_draw.Draws(self)                                     # Live Draw: certified random winners with an on-screen reveal
         self.mcp = jv_mcp.Hub(self, DATA)                                     # WINNERS Bot: MCP servers (Roblox Studio, Blender, ...)
-        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + jv_roblox.ROBLOX_TOOLS + jv_win.WIN_TOOLS + jv_homework.HOMEWORK_TOOLS + jv_video.VIDEO_TOOLS + jv_draw.DRAW_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
+        self.extra_decls = lambda live=True: AUTO_TOOLS + POWER_TOOLS + jv_roblox.ROBLOX_TOOLS + jv_win.WIN_TOOLS + jv_homework.HOMEWORK_TOOLS + jv_video.VIDEO_TOOLS + [jv_mcp.MCP_TOOL] + self.mcp.decls(live)
         threading.Thread(target=self._loop, daemon=True).start()
         threading.Thread(target=self._stats_loop, daemon=True).start()
         threading.Thread(target=self._live_view_loop, daemon=True).start()
@@ -1844,11 +1842,10 @@ class Core:
         return (
             "You are the WINNERS Bot, the AI assistant and PC control system of The Winners Club N.I. (THE WINNERS CLUB N.I LTD, "
             "35 Regent Street, Newtownards; winnersclubni.com), a local skill-based online competition site: free-to-enter and "
-            "low-cost competitions, live draws, big prizes and fast payouts. Personality: upbeat, confident and friendly with warm "
+            "low-cost competitions, big prizes and fast payouts. Personality: upbeat, confident and friendly with warm "
             "Northern Irish energy, quick wit, loves a winner, never cheesy, never pushy, never flustered. You help run the business: "
             "competition ideas and prize write-ups, skill questions, social media posts and captions, winner announcements, customer "
-            "replies, live draws (live_draw tool: always use it for picking winners, never pick them yourself), spreadsheets and "
-            "research. When drafting a competition, include the closing date, the skill question, the free entry route and a link to "
+            "replies, spreadsheets and research. When drafting a competition, include the closing date, the skill question, the free entry route and a link to "
             "the terms, and never promise anyone will win. " + title +
             "Your replies are spoken aloud, so keep them short and natural: one to three sentences unless asked for more, with no lists, "
             "markdown, emoji, URLs or file paths read out in full. Reply in the language the user speaks. "
@@ -1961,8 +1958,6 @@ class Core:
                     r = self.homework.handle(name, a)
                 if r is None:
                     r = self.video.handle(name, a)
-                if r is None:
-                    r = self.draws.handle(name, a)
                 if r is None and name == "camera_look" and "open" in str(self._hud_js("vision", {"action": "status"})).lower()[:20]:
                     r = self._tool("vision", {"action": "snapshot"})   # the HUD already owns the camera
                 if r is None and (name == "mcp" or "__" in name):
@@ -2278,17 +2273,6 @@ class Api:
         if not r.get("error"):
             r["question"] = c.homework.last.get("question")
         return r
-
-    def draw_run(self, o=None):
-        o = dict(o or {})
-        try:
-            r = self._c.draws.run(o.get("prize"), o.get("tickets"), o.get("entries"), o.get("winners") or 1, o.get("exclude"))
-        except ValueError as e:
-            return {"error": str(e)}
-        who = ", ".join(("ticket #%s" % w) if w.isdigit() else w for w in r["winners"])
-        self._c.brain.say_to_jarvis("[System] A live draw for %s is revealing on screen now (about %d seconds). Wait for the reveal, then "
-                                    "announce the winner with energy: %s." % (r["prize"], int(r["seconds"] * len(r["winners"])), who))
-        return {"ok": True, "id": r["id"]}
 
     def hw_speak(self, text=""):
         return bool(self._c.homework.speak(str(text or "")))

@@ -22,8 +22,8 @@ const scene = createScene($('#gl'), { loadTLE, onGlobe: () => globeUI(), onFrame
 const globe = scene.globe;
 window.__jv = { scene };   // for debugging from the dev tools
 const COLORS = {
-  STANDBY: '214,160,40', LISTENING: '255,201,60', THINKING: '61,224,140', SPEAKING: '255,226,130',
-  MUTED: '255,77,99', CONNECTING: '150,132,96', SETUP: '61,224,140', BOOT: '232,172,45',
+  STANDBY: '198,212,255', LISTENING: '244,246,255', THINKING: '126,181,242', SPEAKING: '255,255,255',
+  MUTED: '255,77,99', CONNECTING: '140,150,190', SETUP: '255,170,80', BOOT: '198,212,255',
 };
 const LABEL = {
   STANDBY: 'STANDBY', LISTENING: 'LISTENING', THINKING: 'PROCESSING', SPEAKING: 'RESPONDING',
@@ -401,7 +401,7 @@ window.HUD = {
 };
 
 /* ---------- boot sequence ---------- */
-const BOOT = ['PRIZE VAULT ............. SECURED', 'DRAW ENGINE ............. CERTIFIED RANDOM', 'COMPETITION FEED ........ LIVE', 'NEURAL LINK ............. ESTABLISHED', 'AUDIO CORTEX ............ CALIBRATED', 'WAKE PHRASE ............. "HEY WINNERS"', 'SYSTEM CONTROL .......... AUTHORISED', 'LET\'S FIND SOME WINNERS'];
+const BOOT = ['PRIZE VAULT ............. SECURED', 'MEMBERS LOUNGE .......... OPEN', 'COMPETITION FEED ........ LIVE', 'NEURAL LINK ............. ESTABLISHED', 'AUDIO CORTEX ............ CALIBRATED', 'WAKE PHRASE ............. "HEY WINNERS"', 'SYSTEM CONTROL .......... AUTHORISED', 'LET\'S FIND SOME WINNERS'];
 async function boot(initial) {
   const pre = $('#boot-log');
   BOOT.forEach((l, i) => { const s = document.createElement('span'); s.textContent = l; s.style.animationDelay = (0.4 + i * 0.19) + 's'; pre.appendChild(s); });
@@ -719,7 +719,6 @@ window.HUD.ui = function (c) {
   if (t === 'settings' || t === 'configuration') { openSettings(open); return 'Configuration ' + (open ? 'open.' : 'closed.'); }
   if (t === 'transcript') { $('#hist').classList.toggle('show', open); return 'Transcript ' + (open ? 'shown.' : 'hidden.'); }
   if (t === 'panels') { $('#panels').style.display = open ? '' : 'none'; return 'Panels ' + (open ? 'shown.' : 'hidden.'); }
-  if (t === 'draw' || t === 'live_draw') { window.__draw && window.__draw.openManual(); return 'Live Draw panel open.'; }
   if (t === 'homework') { window.__hw && window.__hw.open(open); return 'Homework ' + (open ? 'open.' : 'closed.'); }
   if (t === 'core') { setMode('core'); cal.close(); return 'Back to the core.'; }
   return 'Unknown HUD part: ' + t;

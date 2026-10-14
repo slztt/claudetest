@@ -103,7 +103,7 @@ export function createHolo({ color }) {
       case 'lathe': {             // a profile [[radius,y],...] spun round the Y axis (vases, bottles, engines)
         return holoMesh(new THREE.LatheGeometry((p.points || []).map((q) => new THREE.Vector2(q[0], q[1])), 40), hex, 40);
       }
-      case 'grid': return new THREE.GridHelper(+p.size || 4, +p.divisions || 10, new THREE.Color(hex || 0xffffff), new THREE.Color(hex || 0xffc93c));
+      case 'grid': return new THREE.GridHelper(+p.size || 4, +p.divisions || 10, new THREE.Color(hex || 0xffffff), new THREE.Color(hex || 0xf4f6ff));
       case 'text': return textSprite(String(p.text || ''), +p.size || 0.3, hex || '#ffffff');
       case 'group': return new THREE.Group();
       default: return holoMesh(new THREE.BoxGeometry(size.x, size.y, size.z), hex);

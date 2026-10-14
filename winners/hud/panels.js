@@ -6,7 +6,7 @@
 const CSS = `
 #panels{position:fixed;inset:0;z-index:15;pointer-events:none}
 .wp{position:absolute;pointer-events:auto;display:flex;flex-direction:column;min-width:180px;min-height:110px;
-  background:linear-gradient(160deg,rgba(var(--accent-rgb),.13),rgba(14,11,5,.82) 38%,rgba(14,11,5,.88));backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
+  background:linear-gradient(160deg,rgba(var(--accent-rgb),.13),rgba(17,20,36,.82) 38%,rgba(17,20,36,.88));backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);
   box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.22),0 18px 50px rgba(0,0,0,.55),0 0 30px rgba(var(--accent-rgb),.10);
   clip-path:polygon(0 0,calc(100% - 16px) 0,100% 16px,100% 100%,16px 100%,0 calc(100% - 16px));animation:wpin .55s cubic-bezier(.2,.8,.2,1);transition:box-shadow .2s,opacity .25s}
 @keyframes wpin{0%{opacity:0;transform:scale(.92) translateY(14px);filter:brightness(2.5) blur(2px)}60%{filter:brightness(1.4)}100%{opacity:1;transform:none;filter:none}}
@@ -65,7 +65,7 @@ function md(t) {   // tiny, safe markdown: headings, bold, italics, code, bullet
   }
   return h + (list ? '</ul>' : '');
 }
-function spark(canvas, vals, max = 100, color = '255,201,60') {
+function spark(canvas, vals, max = 100, color = '244,246,255') {
   const c = canvas.getContext('2d'), w = canvas.width = canvas.clientWidth * 2, h = canvas.height = canvas.clientHeight * 2;
   c.clearRect(0, 0, w, h);
   if (vals.length < 2) return;
@@ -76,7 +76,7 @@ function spark(canvas, vals, max = 100, color = '255,201,60') {
 }
 function chart(canvas, d) {
   const c = canvas.getContext('2d'), w = canvas.width = canvas.clientWidth * 2, h = canvas.height = canvas.clientHeight * 2;
-  const pal = ['255,201,60', '61,224,140', '125,255,176', '201,162,255', '255,122,138', '255,143,200'];
+  const pal = ['244,246,255', '111,134,255', '125,255,176', '201,162,255', '255,122,138', '255,143,200'];
   c.clearRect(0, 0, w, h); c.font = '20px Bahnschrift, Segoe UI, sans-serif';
   const series = (d.series || []).filter((s) => Array.isArray(s.values));
   const labels = d.labels || (series[0] ? series[0].values.map((_, i) => String(i + 1)) : []);
@@ -88,14 +88,14 @@ function chart(canvas, d) {
       const a1 = a0 + (Math.max(0, v) / tot) * Math.PI * 2;
       c.beginPath(); c.moveTo(w * 0.35, h / 2); c.arc(w * 0.35, h / 2, r, a0, a1); c.closePath();
       c.fillStyle = `rgba(${pal[i % pal.length]},.55)`; c.fill(); c.strokeStyle = `rgb(${pal[i % pal.length]})`; c.lineWidth = 2; c.stroke();
-      c.fillStyle = '#fff4dc'; c.fillText(`${labels[i] || ''}  ${Math.round((v / tot) * 100)}%`, w * 0.68, 40 + i * 30);
+      c.fillStyle = '#f4f6ff'; c.fillText(`${labels[i] || ''}  ${Math.round((v / tot) * 100)}%`, w * 0.68, 40 + i * 30);
       a0 = a1;
     });
     return;
   }
   const all = series.flatMap((s) => s.values), max = Math.max(...all, 0), min = Math.min(...all, 0), L = 60, B = 40;
   const X = (i, n) => L + (i / Math.max(1, n - 1)) * (w - L - 20), Y = (v) => h - B - ((v - min) / ((max - min) || 1)) * (h - B - 20);
-  c.strokeStyle = 'rgba(255,201,60,.15)'; c.fillStyle = '#a08c64';
+  c.strokeStyle = 'rgba(244,246,255,.15)'; c.fillStyle = '#8a93b8';
   for (let k = 0; k <= 4; k++) { const v = min + ((max - min) * k) / 4, yy = Y(v); c.beginPath(); c.moveTo(L, yy); c.lineTo(w - 10, yy); c.stroke(); c.fillText(+v.toFixed(1), 4, yy + 6); }
   labels.forEach((lb, i) => { if (labels.length < 14 || i % Math.ceil(labels.length / 12) === 0) c.fillText(String(lb).slice(0, 8), X(i, labels.length) - 14, h - 10); });
   series.forEach((s, si) => {
@@ -168,7 +168,7 @@ export function createPanels({ call, hasBridge, esc, act, toast, say, vision }) 
           q('cpu').textContent = Math.round(d.cpu) + '%'; q('ram').textContent = Math.round(d.ram) + '%';
           q('gpu').textContent = d.gpu != null ? Math.round(d.gpu) + '%' : 'n/a';
           q('net').textContent = d.down != null ? `${(d.down / 1e6).toFixed(1)}↓` : 'n/a';
-          spark(b.querySelector('[data-s="cpu"]'), stats.cpu); spark(b.querySelector('[data-s="ram"]'), stats.ram, 100, '61,224,140');
+          spark(b.querySelector('[data-s="cpu"]'), stats.cpu); spark(b.querySelector('[data-s="ram"]'), stats.ram, 100, '111,134,255');
         }, 1000);
         return { destroy() { clearInterval(t); } };
       },
@@ -225,8 +225,8 @@ export function createPanels({ call, hasBridge, esc, act, toast, say, vision }) 
           const ms = paused ? paused : Math.max(0, end - Date.now());
           const f = ms / (total * 1000);
           c.clearRect(0, 0, 320, 320); c.lineWidth = 14; c.lineCap = 'round';
-          c.strokeStyle = 'rgba(255,201,60,.12)'; c.beginPath(); c.arc(160, 160, 140, 0, Math.PI * 2); c.stroke();
-          c.strokeStyle = ms < 10000 ? '#ff5a6e' : 'rgb(255,201,60)'; c.beginPath(); c.arc(160, 160, 140, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); c.stroke();
+          c.strokeStyle = 'rgba(244,246,255,.12)'; c.beginPath(); c.arc(160, 160, 140, 0, Math.PI * 2); c.stroke();
+          c.strokeStyle = ms < 10000 ? '#ff5a6e' : 'rgb(244,246,255)'; c.beginPath(); c.arc(160, 160, 140, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2); c.stroke();
           const sec = Math.ceil(ms / 1000);
           b.querySelector('[data-t]').textContent = `${Math.floor(sec / 60)}:${pad(sec % 60)}`;
           if (!ms && !done && !paused) { done = true; act('TIMER · ' + (s.title || 'done')); say((s.title || 'Timer') + ' finished'); toast((s.title || 'Timer') + ' finished', 6000); }

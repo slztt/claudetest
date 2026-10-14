@@ -7,7 +7,7 @@ const CSS = `
 #cal{position:fixed;inset:66px 2.2vw 92px;z-index:20;display:grid;grid-template-columns:250px 1fr;gap:14px;opacity:0;pointer-events:none;
   transform:perspective(1400px) rotateX(9deg) translateY(30px) scale(.97);transition:opacity .45s,transform .6s cubic-bezier(.2,.8,.2,1);zoom:var(--ui-scale,1)}
 #cal.open{opacity:1;pointer-events:auto;transform:none}
-#cal .cpanel{position:relative;background:linear-gradient(180deg,rgba(var(--accent-rgb),.10),rgba(16,12,5,.78) 30%);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);
+#cal .cpanel{position:relative;background:linear-gradient(180deg,rgba(var(--accent-rgb),.10),rgba(20,24,44,.78) 30%);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);
   box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.16),0 20px 60px rgba(0,0,0,.55);clip-path:polygon(0 0,calc(100% - 22px) 0,100% 22px,100% 100%,22px 100%,0 calc(100% - 22px));min-height:0}
 #cal .cbar{display:flex;flex-direction:column;gap:14px;padding:16px 16px 18px;overflow:auto;scrollbar-width:none}
 #cal h4{font:400 9.5px var(--ui);letter-spacing:.32em;color:var(--accent);text-transform:uppercase;margin-bottom:8px;text-shadow:0 0 10px rgba(var(--accent-rgb),.5)}
@@ -33,9 +33,9 @@ const CSS = `
 .cday.out{opacity:.38}.cday.wkend{background:rgba(var(--accent-rgb),.025)}
 .cday.today{box-shadow:inset 0 0 0 1px var(--accent),0 0 22px rgba(var(--accent-rgb),.35)}
 .cday.sel{background:rgba(var(--accent-rgb),.16)}
-.cday.drop{background:rgba(61,224,140,.18);box-shadow:inset 0 0 0 1px var(--gold)}
+.cday.drop{background:rgba(111,134,255,.18);box-shadow:inset 0 0 0 1px var(--gold)}
 .cday .n{display:flex;align-items:center;gap:6px;font:400 12px var(--mono);color:var(--txt)}
-.cday.today .n b{background:var(--accent);color:#060503;border-radius:99px;padding:0 6px;box-shadow:0 0 12px var(--accent)}
+.cday.today .n b{background:var(--accent);color:#111424;border-radius:99px;padding:0 6px;box-shadow:0 0 12px var(--accent)}
 .cday .n b{font-weight:500}
 .cday .cwx{margin-left:auto;font-size:10px;color:var(--dim);white-space:nowrap}
 .cday .chol{font:400 9px var(--ui);letter-spacing:.06em;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
@@ -60,7 +60,7 @@ const CSS = `
 .tcol{position:relative;background:repeating-linear-gradient(180deg,rgba(var(--accent-rgb),.10) 0 1px,transparent 1px var(--hh));cursor:copy}
 .tcol .off{position:absolute;left:0;right:0;background:rgba(0,0,0,.22);pointer-events:none}
 .tcol.today{background-color:rgba(var(--accent-rgb),.05)}
-.cev{position:absolute;border-radius:5px;padding:3px 6px;font-size:11px;color:#fff;overflow:hidden;cursor:pointer;background:color-mix(in srgb,var(--c) 30%,rgba(16,12,5,.6));border-left:3px solid var(--c);
+.cev{position:absolute;border-radius:5px;padding:3px 6px;font-size:11px;color:#fff;overflow:hidden;cursor:pointer;background:color-mix(in srgb,var(--c) 30%,rgba(20,24,44,.6));border-left:3px solid var(--c);
   box-shadow:0 0 14px color-mix(in srgb,var(--c) 30%,transparent);transition:filter .2s}
 .cev:hover{filter:brightness(1.25)}.cev b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cev small{font:400 9.5px var(--mono);color:var(--txt);opacity:.8}
 .nowline{position:absolute;left:0;right:0;height:2px;background:var(--red);box-shadow:0 0 10px var(--red);pointer-events:none;z-index:3}
@@ -81,7 +81,7 @@ const CSS = `
 .cmini{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .cmini span{font:400 9.5px var(--mono);text-align:center;padding:2px 0;border-radius:3px;color:var(--txt);position:relative}
 .cmini span.h{color:var(--dim);font-size:8px}.cmini span.o{visibility:hidden}
-.cmini span.t{background:var(--accent)!important;color:#060503;box-shadow:0 0 8px var(--accent)}.cmini span.chol{color:var(--gold)}
+.cmini span.t{background:var(--accent)!important;color:#111424;box-shadow:0 0 8px var(--accent)}.cmini span.chol{color:var(--gold)}
 .cmini span[data-l="1"]{background:rgba(var(--accent-rgb),.16)}.cmini span[data-l="2"]{background:rgba(var(--accent-rgb),.3)}.cmini span[data-l="3"]{background:rgba(var(--accent-rgb),.48)}
 .cmini.cside span{cursor:pointer}.cmini.cside span:hover{background:rgba(var(--accent-rgb),.25)}
 .cmini.cside span.sel{box-shadow:inset 0 0 0 1px var(--accent)}
@@ -97,20 +97,20 @@ const CSS = `
 .copts{display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px;color:var(--dim)}.copts label{display:flex;flex-direction:column;gap:3px;letter-spacing:.14em;text-transform:uppercase;font-size:8.5px}
 .copts .cin{padding:6px 8px;font-size:12px}
 /* editor */
-#cal-ed{position:fixed;inset:0;z-index:25;display:none;place-items:center;background:radial-gradient(circle,rgba(6,5,3,.4),rgba(6,5,3,.8))}
+#cal-ed{position:fixed;inset:0;z-index:25;display:none;place-items:center;background:radial-gradient(circle,rgba(17,20,36,.4),rgba(17,20,36,.8))}
 #cal-ed.show{display:grid}
-#cal-ed form{width:min(560px,92vw);max-height:88vh;overflow:auto;padding:24px 28px 22px;background:linear-gradient(135deg,rgba(var(--accent-rgb),.16),rgba(16,12,5,.95) 50%);
+#cal-ed form{width:min(560px,92vw);max-height:88vh;overflow:auto;padding:24px 28px 22px;background:linear-gradient(135deg,rgba(var(--accent-rgb),.16),rgba(20,24,44,.95) 50%);
   clip-path:polygon(0 0,calc(100% - 26px) 0,100% 26px,100% 100%,26px 100%,0 calc(100% - 26px));box-shadow:0 0 80px rgba(var(--accent-rgb),.2);zoom:var(--ui-scale,1)}
 #cal-ed h2{font:300 11px var(--ui);letter-spacing:.5em;color:var(--accent);margin-bottom:14px}
 #cal-ed .g{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
 #cal-ed label{display:flex;flex-direction:column;gap:5px;font-size:8.5px;letter-spacing:.26em;color:var(--dim);text-transform:uppercase}
 #cal-ed label.full{grid-column:1/-1}#cal-ed label.chk{flex-direction:row;align-items:center;gap:8px;font-size:11px;letter-spacing:.06em;text-transform:none;color:var(--txt)}
-#cal-ed select.cin option{background:#14100a}
+#cal-ed select.cin option{background:#161a2e}
 #cal-ed textarea.cin{min-height:70px;resize:vertical;font:300 13px var(--ui)}
 #cal-ed .btns{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}#cal-ed .btns .sp{flex:1}
 #cal-ed .cb.red{color:var(--red)}#cal-ed .cb.go{background:rgba(var(--accent-rgb),.25);color:#fff}
 #cal-ed .note{font-size:11px;color:var(--gold);margin-top:10px;min-height:14px}
-#cal-tip{position:fixed;z-index:24;pointer-events:none;padding:8px 10px;background:rgba(16,12,5,.94);font-size:11px;color:var(--txt);max-width:260px;border-left:2px solid var(--accent);display:none;line-height:1.5}
+#cal-tip{position:fixed;z-index:24;pointer-events:none;padding:8px 10px;background:rgba(20,24,44,.94);font-size:11px;color:var(--txt);max-width:260px;border-left:2px solid var(--accent);display:none;line-height:1.5}
 body.calopen #globe-ui,body.calopen .col{opacity:.12;pointer-events:none}
 @media (max-width:1100px){#cal{grid-template-columns:1fr}#cal .cbar{display:none}}
 `;
@@ -119,7 +119,7 @@ const WX = (c) => c == null ? '' : c === 0 ? '☀' : c <= 2 ? '🌤' : c === 3 ?
 const MOON = { 'New moon': '●', 'First quarter': '◐', 'Full moon': '○', 'Last quarter': '◑' };
 const DN = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const CATS = { work: '#ffc93c', personal: '#9be7a1', health: '#ff7a8a', social: '#3de08c', travel: '#c9a2ff', birthday: '#ff8fc8', focus: '#7dffd3', other: '#a9c6da' };
+const CATS = { work: '#f4f6ff', personal: '#9be7a1', health: '#ff7a8a', social: '#6f86ff', travel: '#c9a2ff', birthday: '#ff8fc8', focus: '#7dffd3', other: '#a9c6da' };
 const pad = (n) => String(n).padStart(2, '0');
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const parseISO = (s) => { const [y, m, d] = s.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); };

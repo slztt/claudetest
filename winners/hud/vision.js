@@ -165,7 +165,7 @@ export function createVision({ call, act, toast, say, onHands, hooks }) {
     const cv = S.canvas, dpr = Math.min(2, devicePixelRatio || 1);
     if (cv.width !== Math.round(cv.clientWidth * dpr)) { cv.width = Math.round(cv.clientWidth * dpr); cv.height = Math.round(cv.clientHeight * dpr); }
     const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, cv.clientWidth, cv.clientHeight);
-    const M = mapper(w, h), style = S.style, acc = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '255,201,60';
+    const M = mapper(w, h), style = S.style, acc = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || '244,246,255';
     const line = (pts, pairs, col, lw) => { c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); for (const { start, end } of pairs) { const a = M(pts[start]), b = M(pts[end]); c.moveTo(a[0], a[1]); c.lineTo(b[0], b[1]); } c.stroke(); };
     const dots = (pts, idx, r, col) => { c.fillStyle = col; for (const i of idx) { const [x, y] = M(pts[i]); c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); } };
     const brackets = (pts, label, sub, col) => {
@@ -198,7 +198,7 @@ export function createVision({ call, act, toast, say, onHands, hooks }) {
     (Hh && Hh.landmarks || []).forEach((pts, i) => {
       const side = ((Hh.handedness[i] || [])[0] || {}).categoryName === 'Left' ? 'RIGHT' : 'LEFT';   // mirrored view
       const g = ((Hh.gestures[i] || [])[0]) || {};
-      const col = S.pinch[i] ? '61,224,140' : acc;
+      const col = S.pinch[i] ? '111,134,255' : acc;
       if (style !== 'minimal') {
         line(pts, GestureRecognizer.HAND_CONNECTIONS, `rgba(${col},.95)`, 2);
         dots(pts, [...Array(21).keys()], 3, `rgba(${col},1)`);

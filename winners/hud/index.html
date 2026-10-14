@@ -7,8 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{
-  --accent:#ffc93c; --accent-rgb:255,201,60;
-  --gold:#3de08c; --txt:#fff4dc; --dim:#a08c64; --red:#ff5a6e; --bg:#060503;
+  --accent:#f4f6ff; --accent-rgb:244,246,255;
+  --gold:#6f86ff; --txt:#f4f6ff; --dim:#8a93b8; --red:#ff5a6e; --bg:#111424;
   --ui:"Bahnschrift","Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;
   --mono:"Cascadia Mono","Consolas","SFMono-Regular",monospace;
 }
@@ -26,13 +26,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font
 /* ---------- top ---------- */
 #top{position:fixed;top:0;left:0;right:0;height:64px;z-index:5}
 #brand{position:fixed;top:14px;left:26px;z-index:6;pointer-events:none;display:flex;align-items:center;gap:12px}
-#brand .wlogo{width:46px;height:46px;flex:none;filter:drop-shadow(0 0 10px rgba(var(--accent-rgb),.65));animation:wshine 6s ease-in-out infinite}
-@keyframes wshine{0%,100%{filter:drop-shadow(0 0 8px rgba(var(--accent-rgb),.5))}50%{filter:drop-shadow(0 0 18px rgba(var(--accent-rgb),.95))}}
-#boot .blogo{display:flex;justify-content:center;margin-bottom:14px}#boot .blogo .wlogo{width:120px;height:120px;filter:drop-shadow(0 0 30px rgba(var(--accent-rgb),.8));opacity:0;animation:bl 1s .05s forwards,wspin 2.6s .2s ease-out}
+#brand .wlogo{width:46px;height:46px;flex:none;filter:drop-shadow(0 0 10px rgba(90,111,255,.6));animation:wshine 6s ease-in-out infinite}
+@keyframes wshine{0%,100%{filter:drop-shadow(0 0 8px rgba(90,111,255,.45))}50%{filter:drop-shadow(0 0 20px rgba(90,111,255,.95))}}
+#boot .blogo{display:flex;justify-content:center;align-items:center;gap:22px;margin-bottom:22px}#boot .blogo .wword b{font-size:64px}#boot .blogo .wword small{font-size:16px;margin-top:10px}#boot .blogo .wlogo{width:104px;height:104px;filter:drop-shadow(0 0 30px rgba(90,111,255,.85));opacity:0;animation:bl 1s .05s forwards,wspin 2.6s .2s ease-out}
 @keyframes wspin{from{transform:rotateY(180deg) scale(.6)}to{transform:none}}
-#boot .tag{text-align:center;font:400 10px var(--mono);letter-spacing:.6em;color:var(--dim);margin:-12px 0 22px;opacity:0;animation:bl 1s .4s forwards}
-#brand b{font-weight:700;font-size:21px;letter-spacing:.42em;color:var(--accent);text-shadow:0 0 18px rgba(var(--accent-rgb),.7)}
-#brand small{display:block;margin-top:5px;font-size:8.5px;letter-spacing:.42em;color:var(--dim)}
+#boot .tag{text-align:center;font:400 10px var(--mono);letter-spacing:.6em;color:var(--dim);margin:0 0 26px;opacity:0;animation:bl 1s .4s forwards}
+.wword{display:flex;flex-direction:column;align-items:center;line-height:1}
+.wword b{font:700 27px/1 'Cinzel','Trajan Pro','Georgia','Times New Roman',serif;letter-spacing:.03em;color:#fff;text-shadow:0 0 16px rgba(90,111,255,.55)}
+.wword small{font:600 9px/1 'Georgia','Times New Roman',serif;letter-spacing:.62em;margin:5px 0 0 .62em;color:#fff}
+#brand>small,#brand .old small{display:block;margin-top:5px;font-size:8.5px;letter-spacing:.42em;color:var(--dim)}
 #ctl{position:fixed;top:14px;right:22px;z-index:7;display:flex;align-items:center;gap:6px}
 #clock{font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--dim);margin-right:14px;text-align:right;line-height:1.35}
 #clock b{display:block;font-weight:400;font-size:17px;color:var(--txt);letter-spacing:.2em}
@@ -88,12 +90,12 @@ body.ready #right .panel:nth-child(3){opacity:1;transform:translateX(4px) rotate
 #subs{position:fixed;left:50%;bottom:112px;transform:translateX(-50%);width:min(720px,48vw);text-align:center;z-index:3;pointer-events:none}
 #subs div{opacity:0;transition:opacity .6s;font-weight:300}
 #subs div.show{opacity:1}
-#subs .you{font-size:14px;color:var(--gold);letter-spacing:.04em;margin-bottom:6px;text-shadow:0 0 12px rgba(61,224,140,.45)}
+#subs .you{font-size:14px;color:var(--gold);letter-spacing:.04em;margin-bottom:6px;text-shadow:0 0 12px rgba(111,134,255,.45)}
 #subs .jv{font-size:19px;color:#fff;line-height:1.4;text-shadow:0 0 18px rgba(var(--accent-rgb),.7)}
 
 /* ---------- command bar ---------- */
 #bar{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(30px);width:min(660px,58vw);display:flex;align-items:center;gap:4px;padding:6px 10px 6px 24px;z-index:6;
-  border-radius:999px;background:rgba(20,16,8,.55);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
+  border-radius:999px;background:rgba(24,28,52,.55);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);
   box-shadow:inset 0 0 28px rgba(var(--accent-rgb),.10),0 14px 50px rgba(0,0,0,.6),0 0 40px rgba(var(--accent-rgb),.10);
   opacity:0;transition:opacity .8s .6s,transform .9s .6s cubic-bezier(.2,.8,.2,1),box-shadow .3s}
 body.ready #bar{opacity:1;transform:translateX(-50%)}
@@ -110,14 +112,14 @@ body.ready #bar{opacity:1;transform:translateX(-50%)}
 #boot .logo{font-weight:200;font-size:34px;letter-spacing:.7em;margin:0 0 22px .7em;color:#fff;text-shadow:0 0 30px var(--accent);opacity:0;animation:bl 1s .1s forwards;text-align:center}
 
 /* ---------- toast ---------- */
-#toast{position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:8;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--gold);text-shadow:0 0 12px rgba(61,224,140,.6);opacity:0;transition:opacity .4s;pointer-events:none;text-align:center;max-width:70vw}
+#toast{position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:8;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--gold);text-shadow:0 0 12px rgba(111,134,255,.6);opacity:0;transition:opacity .4s;pointer-events:none;text-align:center;max-width:70vw}
 #toast.show{opacity:1}
 
 /* ---------- approval ---------- */
-#approve{position:fixed;inset:0;z-index:40;display:none;place-items:center;background:radial-gradient(circle,rgba(6,5,3,.55),rgba(6,5,3,.88));backdrop-filter:blur(8px)}
+#approve{position:fixed;inset:0;z-index:40;display:none;place-items:center;background:radial-gradient(circle,rgba(17,20,36,.55),rgba(17,20,36,.88));backdrop-filter:blur(8px)}
 #approve.show{display:grid;animation:fade .25s}
 @keyframes fade{from{opacity:0}}
-#approve .card{width:min(560px,86vw);padding:30px 34px 26px;background:linear-gradient(135deg,rgba(255,90,110,.16),rgba(61,224,140,.06) 60%,transparent);
+#approve .card{width:min(560px,86vw);padding:30px 34px 26px;background:linear-gradient(135deg,rgba(255,90,110,.16),rgba(111,134,255,.06) 60%,transparent);
   clip-path:polygon(0 0,calc(100% - 28px) 0,100% 28px,100% 100%,28px 100%,0 calc(100% - 28px));box-shadow:0 0 80px rgba(255,90,110,.25);transform:perspective(900px) rotateX(4deg);animation:rise .5s cubic-bezier(.2,.8,.2,1)}
 @keyframes rise{from{transform:perspective(900px) rotateX(24deg) translateY(40px);opacity:0}}
 #approve h2{font-weight:300;font-size:12px;letter-spacing:.5em;color:var(--red);text-shadow:0 0 14px rgba(255,90,110,.7);margin-bottom:6px}
@@ -135,18 +137,18 @@ body.ready #bar{opacity:1;transform:translateX(-50%)}
 
 /* ---------- transcript + settings ---------- */
 #hist{position:fixed;left:50%;bottom:104px;transform:translateX(-50%) translateY(10px);width:min(640px,56vw);max-height:42vh;overflow:auto;padding:18px 24px;z-index:6;opacity:0;pointer-events:none;transition:.3s;
-  background:rgba(14,11,5,.78);backdrop-filter:blur(18px);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  background:rgba(17,20,36,.78);backdrop-filter:blur(18px);border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 #hist.show{opacity:1;pointer-events:auto;transform:translateX(-50%)}
 #hist p{font-size:13px;line-height:1.6;margin-bottom:8px;font-weight:300;user-select:text;-webkit-user-select:text}
 #hist p.you{color:var(--gold)}#hist p.winnersbot{color:var(--accent)}#hist p.sys{color:var(--dim);font-size:11px;letter-spacing:.08em}
 #settings{position:fixed;top:0;right:0;bottom:0;width:min(400px,92vw);z-index:30;padding:70px 34px 34px;overflow:auto;transform:translateX(104%);transition:transform .55s cubic-bezier(.2,.8,.2,1);
-  background:linear-gradient(270deg,rgba(16,12,5,.92),rgba(16,12,5,.78));backdrop-filter:blur(26px) saturate(1.5);box-shadow:-30px 0 80px rgba(0,0,0,.6)}
+  background:linear-gradient(270deg,rgba(20,24,44,.92),rgba(20,24,44,.78));backdrop-filter:blur(26px) saturate(1.5);box-shadow:-30px 0 80px rgba(0,0,0,.6)}
 #settings.open{transform:none}
 #settings h2{font-weight:300;font-size:12px;letter-spacing:.5em;color:var(--accent);margin-bottom:24px}
 #settings label{display:block;font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);margin:20px 0 7px}
 #settings input[type=password],#settings input[type=text],#settings select{width:100%;background:rgba(255,255,255,.045);border:0;border-bottom:1px solid rgba(var(--accent-rgb),.35);color:#fff;font:300 13.5px var(--ui);padding:10px 8px;outline:0;border-radius:4px 4px 0 0;user-select:text;-webkit-user-select:text}
 #settings input:focus,#settings select:focus{border-bottom-color:var(--accent);background:rgba(var(--accent-rgb),.08)}
-#settings select option{background:#14100a;color:#fff}
+#settings select option{background:#161a2e;color:#fff}
 #settings input[type=range]{width:100%;accent-color:var(--accent)}
 .lvl{height:4px;background:rgba(255,255,255,.07);margin-top:8px}.lvl i{display:block;height:100%;width:0;background:var(--gold);box-shadow:0 0 10px var(--gold)}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:20px;font-size:12.5px;font-weight:300;color:var(--txt);line-height:1.4}
@@ -160,11 +162,11 @@ body.ready #bar{opacity:1;transform:translateX(-50%)}
 #approve .auto{display:flex;align-items:center;gap:10px;margin:0 0 18px;font-size:12.5px;font-weight:300;color:var(--txt);cursor:pointer;user-select:none;-webkit-user-select:none;letter-spacing:.02em}
 #approve .auto small{margin-left:auto;font-size:10px;color:var(--dim);letter-spacing:.08em}
 #approve .auto input{appearance:none;-webkit-appearance:none;flex:none;width:18px;height:18px;border-radius:5px;background:rgba(255,255,255,.08);position:relative;cursor:pointer;outline:0;transition:.2s}
-#approve .auto input:checked{background:rgba(61,224,140,.28);box-shadow:0 0 12px rgba(61,224,140,.5)}
+#approve .auto input:checked{background:rgba(111,134,255,.28);box-shadow:0 0 12px rgba(111,134,255,.5)}
 #approve .auto input:checked::after{content:"";position:absolute;left:5px;top:1.5px;width:5px;height:10px;border:solid var(--gold);border-width:0 2px 2px 0;transform:rotate(45deg)}
 #approve .hardnote{display:none;margin:0 0 18px;font-size:11px;letter-spacing:.06em;color:var(--red)}
 #approve.hard .auto{display:none}#approve.hard .hardnote{display:block}
-#auto-chip{position:fixed;left:28px;bottom:30px;z-index:9;display:none;align-items:center;gap:10px;padding:9px 16px;border-radius:99px;font-size:10px;letter-spacing:.22em;color:var(--gold);background:rgba(61,224,140,.1);box-shadow:0 0 22px rgba(61,224,140,.18);cursor:pointer;transition:.2s}
+#auto-chip{position:fixed;left:28px;bottom:30px;z-index:9;display:none;align-items:center;gap:10px;padding:9px 16px;border-radius:99px;font-size:10px;letter-spacing:.22em;color:var(--gold);background:rgba(111,134,255,.1);box-shadow:0 0 22px rgba(111,134,255,.18);cursor:pointer;transition:.2s}
 #auto-chip.show{display:flex;animation:fade .3s}
 #auto-chip:hover{background:rgba(255,90,110,.16);color:var(--red)}
 #auto-chip i{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);animation:pulse 1.6s infinite}
@@ -198,7 +200,7 @@ body.nocaps #subs{display:none}
 @media (prefers-reduced-motion: reduce){#sweep{display:none}}
 
 /* ---------- brain chip ---------- */
-#brain{position:fixed;top:68px;left:84px;z-index:6;font:400 9.5px var(--mono);letter-spacing:.22em;color:var(--dim);text-transform:uppercase;pointer-events:none;white-space:nowrap}
+#brain{position:fixed;top:70px;left:30px;z-index:6;font:400 9.5px var(--mono);letter-spacing:.22em;color:var(--dim);text-transform:uppercase;pointer-events:none;white-space:nowrap}
 #brain b{color:var(--accent);font-weight:400}
 #jobchip{top:88px!important}
 
@@ -263,7 +265,7 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
 <div id="vig"></div><div id="sweep"></div><div id="flash"></div>
 
 <div id="top" class="pywebview-drag-region"></div>
-<div id="brand"><svg class="wlogo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="wgb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b8"/><stop offset=".45" stop-color="#ffc93c"/><stop offset="1" stop-color="#a9740a"/></linearGradient></defs><path d="M18 7h28v15c0 9.5-6.3 16.5-14 16.5S18 31.5 18 22z" fill="url(#wgb)"/><path d="M18 11.5H9.5v4.5c0 6.8 4.8 11 10.8 11.2M46 11.5h8.5v4.5c0 6.8-4.8 11-10.8 11.2" fill="none" stroke="url(#wgb)" stroke-width="3.4" stroke-linecap="round"/><path d="M28.6 38h6.8l1.4 8h-9.6z" fill="url(#wgb)"/><path d="M20 46h24l3 9H17z" fill="url(#wgb)"/><rect x="22" y="49" width="20" height="3" rx="1" fill="#060503" opacity=".35"/><polygon points="32.00,14.80 33.53,18.90 37.90,19.08 34.47,21.80 35.64,26.02 32.00,23.60 28.36,26.02 29.53,21.80 26.10,19.08 30.47,18.90" fill="#060503" opacity=".55"/></svg><div><b>W.I.N.N.E.R.S.</b><small>THE WINNERS CLUB N.I  ·  AI CONTROL SYSTEM</small></div></div>
+<div id="brand"><svg class="wlogo" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="wgb" cx="30%" cy="25%" r="85%"><stop offset="0" stop-color="#9cc8f6"/><stop offset=".45" stop-color="#5a6fff"/><stop offset="1" stop-color="#2d3cc4"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#wgb)"/><circle cx="32" cy="32" r="29.2" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1.2"/><g fill="#fff"><circle cx="32" cy="22.5" r="8.2"/><circle cx="23.2" cy="35" r="8.2"/><circle cx="40.8" cy="35" r="8.2"/><path d="M30.2 27h3.6c.3 9.5 2.3 15.6 6.2 20.5H24c3.9-4.9 5.9-11 6.2-20.5z"/></g></svg><div class="wword"><b>WINNERS</b><small>CLUB NI</small></div></div>
 <div id="brain" aria-live="polite">BRAIN · <b id="brain-name">—</b></div>
 <div id="ctl">
   <div id="clock"><b>--:--</b><span>---</span></div>
@@ -367,7 +369,7 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
   <textarea id="orders" spellcheck="false"></textarea>
   <div class="brow"><button class="btn go" id="orders-save">Save orders</button></div>
   </details>
-  <p class="gnote" style="text-align:left;margin-top:22px">Ask for anything by voice: “watch my screen”, “open the calendar”, “open the camera”, “put YouTube on”. Keys: / or T to type, D live draw, H homework, C calendar, O camera, G Earth, J Control Centre, Esc back.</p>
+  <p class="gnote" style="text-align:left;margin-top:22px">Ask for anything by voice: “watch my screen”, “open the calendar”, “open the camera”, “put YouTube on”. Keys: / or T to type, H homework, C calendar, O camera, G Earth, J Control Centre, Esc back.</p>
   <div class="brow"><button class="btn go" id="s-test">Test audio</button><button class="btn" id="s-done">Close</button></div>
   <p id="hint-wake"></p>
 </aside>
@@ -380,7 +382,7 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
   <div class="btns"><button class="btn no" id="a-no">Deny · Esc</button><button class="btn go" id="a-yes">Authorise · Enter</button></div>
 </div></div>
 
-<div id="boot"><div><div class="blogo"><svg class="wlogo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="wgc" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3b8"/><stop offset=".45" stop-color="#ffc93c"/><stop offset="1" stop-color="#a9740a"/></linearGradient></defs><path d="M18 7h28v15c0 9.5-6.3 16.5-14 16.5S18 31.5 18 22z" fill="url(#wgc)"/><path d="M18 11.5H9.5v4.5c0 6.8 4.8 11 10.8 11.2M46 11.5h8.5v4.5c0 6.8-4.8 11-10.8 11.2" fill="none" stroke="url(#wgc)" stroke-width="3.4" stroke-linecap="round"/><path d="M28.6 38h6.8l1.4 8h-9.6z" fill="url(#wgc)"/><path d="M20 46h24l3 9H17z" fill="url(#wgc)"/><rect x="22" y="49" width="20" height="3" rx="1" fill="#060503" opacity=".35"/><polygon points="32.00,14.80 33.53,18.90 37.90,19.08 34.47,21.80 35.64,26.02 32.00,23.60 28.36,26.02 29.53,21.80 26.10,19.08 30.47,18.90" fill="#060503" opacity=".55"/></svg></div><div class="logo">W.I.N.N.E.R.S.</div><div class="tag">THE WINNERS CLUB N.I</div><pre id="boot-log"></pre></div></div>
+<div id="boot"><div><div class="blogo"><svg class="wlogo" viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="wgc" cx="30%" cy="25%" r="85%"><stop offset="0" stop-color="#9cc8f6"/><stop offset=".45" stop-color="#5a6fff"/><stop offset="1" stop-color="#2d3cc4"/></radialGradient></defs><circle cx="32" cy="32" r="30" fill="url(#wgc)"/><circle cx="32" cy="32" r="29.2" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1.2"/><g fill="#fff"><circle cx="32" cy="22.5" r="8.2"/><circle cx="23.2" cy="35" r="8.2"/><circle cx="40.8" cy="35" r="8.2"/><path d="M30.2 27h3.6c.3 9.5 2.3 15.6 6.2 20.5H24c3.9-4.9 5.9-11 6.2-20.5z"/></g></svg><div class="wword"><b>WINNERS</b><small>CLUB NI</small></div></div><div class="tag">AI CONTROL SYSTEM</div><pre id="boot-log"></pre></div></div>
 <script type="importmap">
 {"imports":{"three":"./vendor/three/three.module.min.js",
 "three/addons/":"./vendor/three/addons/"}}
@@ -389,6 +391,5 @@ body.globe #gl,body.model #gl{cursor:grab}body.dragging #gl{cursor:grabbing}
 <script type="module" src="control.js"></script>
 <script type="module" src="hudx.js"></script>
 <script type="module" src="homework.js"></script>
-<script type="module" src="draw.js"></script>
 </body>
 </html>

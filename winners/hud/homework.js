@@ -8,7 +8,7 @@ const css = document.createElement('style');
 css.textContent = `
 #hw{position:fixed;left:50%;top:84px;bottom:110px;width:min(860px,64vw);transform:translate(-50%,24px) perspective(1200px) rotateX(6deg);z-index:20;opacity:0;pointer-events:none;
   display:flex;flex-direction:column;padding:22px 28px 20px;transition:opacity .45s,transform .6s cubic-bezier(.2,.8,.2,1);
-  background:linear-gradient(160deg,rgba(var(--accent-rgb),.14),rgba(14,11,5,.86) 40%,rgba(14,11,5,.9));backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);
+  background:linear-gradient(160deg,rgba(var(--accent-rgb),.14),rgba(17,20,36,.86) 40%,rgba(17,20,36,.9));backdrop-filter:blur(22px) saturate(1.4);-webkit-backdrop-filter:blur(22px) saturate(1.4);
   clip-path:polygon(0 0,calc(100% - 26px) 0,100% 26px,100% 100%,26px 100%,0 calc(100% - 26px));box-shadow:0 30px 90px rgba(0,0,0,.6)}
 #hw.open{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
 body.hw-open #left,body.hw-open #right,body.hw-open #subs{opacity:.12;transition:opacity .4s}
@@ -23,7 +23,7 @@ body.hw-open #left,body.hw-open #right,body.hw-open #subs{opacity:.12;transition
 .hw-opts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
 .hw-opts label{display:flex;flex-direction:column;gap:5px;font-size:8.5px;letter-spacing:.3em;color:var(--dim);text-transform:uppercase}
 .hw-opts input,.hw-opts select{background:rgba(255,255,255,.045);border:0;border-bottom:1px solid rgba(var(--accent-rgb),.3);color:#fff;font:300 12.5px var(--ui);padding:8px;outline:0;border-radius:4px 4px 0 0;user-select:text;-webkit-user-select:text}
-.hw-opts select option{background:#14100a}
+.hw-opts select option{background:#161a2e}
 .hw-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .hw-btns .sp{flex:1}
 #hw-status{font:400 10px var(--mono);letter-spacing:.18em;color:var(--dim);text-transform:uppercase}

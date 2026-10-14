@@ -5,7 +5,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 const css = `
 #cc{position:fixed;top:0;right:0;bottom:0;width:min(780px,97vw);z-index:32;display:flex;flex-direction:column;padding:62px 0 0;transform:translateX(104%);transition:transform .55s cubic-bezier(.2,.8,.2,1);
-  background:linear-gradient(270deg,rgba(3,13,23,.95),rgba(16,12,5,.86));backdrop-filter:blur(26px) saturate(1.5);box-shadow:-30px 0 90px rgba(0,0,0,.65)}
+  background:linear-gradient(270deg,rgba(3,13,23,.95),rgba(20,24,44,.86));backdrop-filter:blur(26px) saturate(1.5);box-shadow:-30px 0 90px rgba(0,0,0,.65)}
 #cc.open{transform:none}
 #cc .hd{display:flex;align-items:center;gap:6px;padding:0 30px 0 34px;border-bottom:1px solid rgba(var(--accent-rgb),.18)}
 #cc .hd h2{font-weight:300;font-size:12px;letter-spacing:.5em;color:var(--accent);margin-right:auto;text-shadow:0 0 12px rgba(var(--accent-rgb),.6)}
@@ -39,15 +39,15 @@ const css = `
 .chip:hover{color:var(--txt)}.chip.on{background:rgba(var(--accent-rgb),.2);color:var(--accent)}
 .sk{display:flex;align-items:center;gap:12px;padding:9px 12px;cursor:pointer;font-size:13px;font-weight:300;color:var(--txt);border-bottom:1px solid rgba(255,255,255,.04)}
 .sk:hover{background:rgba(var(--accent-rgb),.08)}.sk em{font:normal 400 9px var(--mono);letter-spacing:.18em;padding:3px 7px;border-radius:3px;background:rgba(255,255,255,.07);color:var(--dim);text-transform:uppercase;flex:none}
-.sk em.recipe{color:var(--accent);background:rgba(var(--accent-rgb),.14)}.sk em.lesson{color:var(--gold);background:rgba(61,224,140,.12)}
+.sk em.recipe{color:var(--accent);background:rgba(var(--accent-rgb),.14)}.sk em.lesson{color:var(--gold);background:rgba(111,134,255,.12)}
 .sk span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sk small{color:var(--dim);font-size:10.5px;flex:none}
 .lv{margin-bottom:14px}.lv .nm{font-size:13px;color:#fff;font-weight:300}.lv .ds{font-size:11px;color:var(--dim);margin:2px 0 8px;line-height:1.5}
 .seg{display:flex;gap:2px}.seg button{flex:1;border:0;cursor:pointer;padding:9px 6px;font:400 9.5px var(--ui);letter-spacing:.2em;text-transform:uppercase;background:rgba(255,255,255,.05);color:var(--dim);transition:.2s}
 .seg button:hover{color:var(--txt)}.seg button.on{background:rgba(var(--accent-rgb),.22);color:var(--accent);box-shadow:inset 0 -2px 0 var(--accent)}
-.seg button.on.warn{background:rgba(61,224,140,.18);color:var(--gold);box-shadow:inset 0 -2px 0 var(--gold)}.seg button.on.bad{background:rgba(255,90,110,.18);color:var(--red);box-shadow:inset 0 -2px 0 var(--red)}
+.seg button.on.warn{background:rgba(111,134,255,.18);color:var(--gold);box-shadow:inset 0 -2px 0 var(--gold)}.seg button.on.bad{background:rgba(255,90,110,.18);color:var(--red);box-shadow:inset 0 -2px 0 var(--red)}
 #cc .sw{margin-top:14px}
 .themes{display:flex;gap:10px;margin-top:6px}.th{width:34px;height:34px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:.2s}.th:hover{transform:scale(1.1)}.th.on{border-color:#fff;box-shadow:0 0 18px currentColor}
-#jobchip{position:fixed;left:34px;top:66px;z-index:6;display:none;align-items:center;gap:9px;padding:6px 14px;border-radius:99px;font:400 10px var(--ui);letter-spacing:.22em;color:var(--gold);background:rgba(61,224,140,.09);cursor:pointer}
+#jobchip{position:fixed;left:34px;top:66px;z-index:6;display:none;align-items:center;gap:9px;padding:6px 14px;border-radius:99px;font:400 10px var(--ui);letter-spacing:.22em;color:var(--gold);background:rgba(111,134,255,.09);cursor:pointer}
 #jobchip.show{display:flex;animation:fade .3s}#jobchip i{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);animation:pulse 1.4s infinite}
 `;
 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
@@ -60,7 +60,7 @@ const PERMS = [
   ['network', 'Network', 'Downloads and API calls to Discord, Roblox and other services.'],
 ];
 const LEVELS = [['off', 'Off', 'bad'], ['risky', 'Ask if risky', ''], ['always', 'Ask always', 'warn'], ['allow', 'Allow', '']];
-const THEME_COLORS = { cyan: '#ffc93c', violet: '#a98bff', emerald: '#4de3a0', amber: '#3de08c', crimson: '#ff5a7a', mono: '#cfd8e0' };
+const THEME_COLORS = { cyan: '#f4f6ff', violet: '#a98bff', emerald: '#4de3a0', amber: '#6f86ff', crimson: '#ff5a7a', mono: '#cfd8e0' };
 const TOGGLES = [
   ['research_on', 'Research before acting', 'Roblox, Discord, Blender and Google scripts are refused until he has read the docs.'],
   ['learn_on', 'Learn from use', 'Verified scripts become recipes and failures become lessons in the skill folder.'],

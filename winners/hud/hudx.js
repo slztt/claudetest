@@ -135,7 +135,7 @@ function spark(c, series) {
   for (let y = 0; y <= 2; y++) { g.beginPath(); g.moveTo(0, Math.round(h * y / 2) + .5); g.lineTo(w, Math.round(h * y / 2) + .5); g.stroke(); }
   for (const [arr, max, col] of series) {
     if (arr.length < 2) continue;
-    const color = col === 'gold' ? (cs.getPropertyValue('--gold').trim() || '#3de08c') : (cs.getPropertyValue('--accent').trim() || '#ffc93c');
+    const color = col === 'gold' ? (cs.getPropertyValue('--gold').trim() || '#6f86ff') : (cs.getPropertyValue('--accent').trim() || '#f4f6ff');
     g.beginPath();
     arr.forEach((v, i) => { const x = w - (arr.length - 1 - i) * (w / (H - 1)), y = h - 2 - (Math.min(v, max) / max) * (h - 4); i ? g.lineTo(x, y) : g.moveTo(x, y); });
     g.strokeStyle = color; g.lineWidth = 1.4; g.shadowColor = color; g.shadowBlur = 6; g.stroke(); g.shadowBlur = 0;
@@ -254,7 +254,7 @@ async function loadTicker() {
     const c = await call('crypto_prices', ['bitcoin', 'ethereum', 'solana'], 'usd');
     if (c && c.rows) parts.push('<b>MARKETS</b>' + c.rows.map((r) => `${r.id.slice(0, 3).toUpperCase()} <em>$${Number(r.price).toLocaleString('en-US', { maximumFractionDigits: r.price > 100 ? 0 : 2 })}</em> <span class="${r.change >= 0 ? 'up' : 'dn'}">${r.change >= 0 ? '▲' : '▼'}${Math.abs(r.change).toFixed(1)}%</span>`).join(' &nbsp; '));
   }
-  parts.unshift('<b>THE WINNERS CLUB N.I</b><em>winnersclubni.com</em> &nbsp;◆&nbsp; <em>Free-to-enter competitions</em> &nbsp;◆&nbsp; <em>Live draws</em> &nbsp;◆&nbsp; <em>Fast payouts</em> &nbsp;◆&nbsp; <em>Newtownards, Co. Down</em>');
+  parts.unshift('<b>THE WINNERS CLUB N.I</b><em>winnersclubni.com</em> &nbsp;◆&nbsp; <em>Free-to-enter competitions</em> &nbsp;◆&nbsp; <em>Fast payouts</em> &nbsp;◆&nbsp; <em>Newtownards, Co. Down</em>');
   tickItems = parts;
   const d = tick.firstElementChild;
   const one = parts.join(' &nbsp; ') + ' &nbsp; ';
@@ -302,8 +302,8 @@ function frame(now) {
   tickStep(now);
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (document.hidden) return;
-  const cs = getComputedStyle(document.documentElement), ac = cs.getPropertyValue('--accent').trim() || '#ffc93c', gold = cs.getPropertyValue('--gold').trim() || '#3de08c';
-  const rgb = cs.getPropertyValue('--accent-rgb').trim() || '255,201,60';
+  const cs = getComputedStyle(document.documentElement), ac = cs.getPropertyValue('--accent').trim() || '#f4f6ff', gold = cs.getPropertyValue('--gold').trim() || '#6f86ff';
+  const rgb = cs.getPropertyValue('--accent-rgb').trim() || '244,246,255';
   const k = 1 - Math.exp(-dt * 10);
   sIn += (T.lvlIn - sIn) * k; sOut += (T.lvlOut - sOut) * k;
   sCpu += (T.cpuNow - sCpu) * (1 - Math.exp(-dt * 2)); sRam += (T.ramNow - sRam) * (1 - Math.exp(-dt * 2));
@@ -320,7 +320,7 @@ function frame(now) {
     const a = i / N * Math.PI * 2 + rot * 0.4, len = R * 0.42 * bars[i];
     const x1 = cx + Math.cos(a) * R, y1 = cy + Math.sin(a) * R, x2 = cx + Math.cos(a) * (R + len), y2 = cy + Math.sin(a) * (R + len);
     g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2);
-    g.strokeStyle = `rgba(${col === gold ? '61,224,140' : rgb},${0.25 + bars[i] * 1.6})`; g.lineWidth = 1.6; g.stroke();
+    g.strokeStyle = `rgba(${col === gold ? '111,134,255' : rgb},${0.25 + bars[i] * 1.6})`; g.lineWidth = 1.6; g.stroke();
   }
   // inner tick ring and rotating segments
   g.save(); g.translate(cx, cy); g.rotate(-rot);

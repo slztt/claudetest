@@ -54,14 +54,14 @@ float snoise(vec3 v){
 
 // Per-state look. c = colour, speed = ring spin multiplier, energy = shimmer, bloom = glow strength, scale = core size
 const STATES = {
-  BOOT:       { c: 0xe8ac2d, speed: 0.3, energy: 0.2,  bloom: 0.9,  scale: 0.9 },
-  STANDBY:    { c: 0xd6a028, speed: 0.25, energy: 0.12, bloom: 0.75, scale: 0.9 },
-  LISTENING:  { c: 0xffc93c, speed: 0.5, energy: 0.5,  bloom: 1.15, scale: 1.0 },
-  THINKING:   { c: 0x3de08c, speed: 1.1, energy: 0.95, bloom: 1.35, scale: 1.02 },
-  SPEAKING:   { c: 0xffe282, speed: 0.7, energy: 0.7,  bloom: 1.3,  scale: 1.05 },
+  BOOT:       { c: 0x3d50da, speed: 0.3, energy: 0.2,  bloom: 0.9,  scale: 0.9 },
+  STANDBY:    { c: 0x3d50da, speed: 0.25, energy: 0.12, bloom: 0.75, scale: 0.9 },
+  LISTENING:  { c: 0x5a6fff, speed: 0.5, energy: 0.5,  bloom: 1.15, scale: 1.0 },
+  THINKING:   { c: 0x7eb5f2, speed: 1.1, energy: 0.95, bloom: 1.35, scale: 1.02 },
+  SPEAKING:   { c: 0x6f86ff, speed: 0.7, energy: 0.7,  bloom: 1.3,  scale: 1.05 },
   MUTED:      { c: 0xff4d63, speed: 0.12, energy: 0.05, bloom: 0.7, scale: 0.88 },
-  CONNECTING: { c: 0x968460, speed: 0.35, energy: 0.2,  bloom: 0.8,  scale: 0.92 },
-  SETUP:      { c: 0xff8c3c, speed: 0.3, energy: 0.2,  bloom: 0.9,  scale: 0.92 },
+  CONNECTING: { c: 0x3a4a8a, speed: 0.35, energy: 0.2,  bloom: 0.8,  scale: 0.92 },
+  SETUP:      { c: 0xffaa50, speed: 0.3, energy: 0.2,  bloom: 0.9,  scale: 0.92 },
 };
 
 export function createScene(canvas, opts = {}) {
@@ -77,7 +77,7 @@ export function createScene(canvas, opts = {}) {
   }
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-  renderer.setClearColor(0x060503, 1);
+  renderer.setClearColor(0x111424, 1);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 100);
