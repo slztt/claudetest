@@ -1,0 +1,10 @@
+sounddevice
+numpy
+google-genai
+pyautogui
+pillow
+mss
+pywebview
+psutil
+pyperclip
+pygetwindow; sys_platform == "win32"
